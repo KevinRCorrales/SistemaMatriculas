@@ -283,7 +283,7 @@ def generar_factura(id_estudiante, periodo):
     info_estudiante: list[list[str]] = [
         ["Campo", "Valor"], # Encabezado de la tabla
         ["Cedula", str(fila_estudiante[0]).strip()],
-        ["Nombre", str(fila_estudiante[1]).strip()],
+        ["Nombre completo", str(fila_estudiante[1]).strip() + " " + str(fila_estudiante[2]).strip()],
         ["Correo", str(fila_estudiante[3]).strip()],
         ["Telefono", str(fila_estudiante[4]).strip()],
     ]
@@ -330,7 +330,7 @@ def generar_factura(id_estudiante, periodo):
     estilo_titulo.alignment = TA_CENTER
     estilo_texto = estilos["BodyText"]
 
-    logo_path = Path(__file__).parent / "logo.png"
+    logo_path = Path(__file__).parent / "image.png"
     if logo_path.exists():
         logo = Image(str(logo_path), width=4 * cm, height=4 * cm)
     else:
