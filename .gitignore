@@ -1,3 +1,7 @@
-.venv/
-.ruff_cache/
-*.xlsx
+.ruff_cache
+.venv
+.idea
+*.xlsx*
+test.py
+
+.vscode/

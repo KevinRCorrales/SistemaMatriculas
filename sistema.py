@@ -1,4 +1,3 @@
-import sys  # Manejo del sistema
 from datetime import date
 from pathlib import Path
 
@@ -125,8 +124,8 @@ def texto_obligatorio(mensaje):
         intentos += 1
         print("Este campo es obligatorio.")
     if intentos == 3:
-        print("Demasiados intentos fallidos! Abortando sistema...")
-        sys.exit(1)  # Salir con código de error 1
+        print("Demasiados intentos fallidos! Abortando...")
+        return
 
 
 def registrar_estudiante():
@@ -170,7 +169,7 @@ def registrar_materia():
 
 
 def generar_id_matricula(hoja):
-    fecha_hoy = date.today().strftime("%d%m%y")
+    fecha_hoy = date.today().strftime("%d%m%y")  # noqa: DTZ011
 
     ultimo_contador = 0
 
@@ -220,7 +219,7 @@ def registrar_matricula():
         print("El estudiante no está registrado.")
         return
     
-    fecha_matricula = date.today().strftime("%Y-%m-%d")
+    fecha_matricula = date.today().strftime("%Y-%m-%d")  # noqa: DTZ011
     fecha_list = fecha_matricula.split("-")  # Convertir str a list usando '-' como separador
     periodo = fecha_list[0]  # Año
 
@@ -261,26 +260,56 @@ def registrar_matricula():
         periodo,
         fecha_matricula,
     ]
-
     guardar_datos(hoja_matriculas, datos_matricula)
 
 
 def generar_factura(id_estudiante, periodo):
     materia = load_workbook(ruta_archivo)
     hoja_matriculas = materia["Matriculas"]
+    hoja_estudiantes = materia["Estudiantes"]
+    hoja_materias = materia["Materias"]
+    
+    #Obtengo la información del estudiante
+    fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
+    if not fila_estudiante:
+        print("El estudiante no está registrado.")
+        return
 
-    matriculas_estudiante = [
-        ["ID Matrícula", "ID Materia", "Creditos"]
+    total_creditos = obtener_total_creditos_estudiante(hoja_matriculas, id_estudiante, periodo)
+    if total_creditos < 2:
+        print(f"No se puede generar la factura: El estudiante solo tiene {total_creditos} crédito(s) matriculado(s). Se requiere un mínimo de 2 créditos.")
+        return
+        
+    info_estudiante: list[list[str]] = [
+        ["Campo", "Valor"], # Encabezado de la tabla
+        ["Cedula", str(fila_estudiante[0]).strip()],
+        ["Nombre", str(fila_estudiante[1]).strip()],
+        ["Correo", str(fila_estudiante[3]).strip()],
+        ["Telefono", str(fila_estudiante[4]).strip()],
+    ]
+
+    #diccionario de materias para obtener el nombre de la materia a partir del código
+    dict_materias: dict[str, str] = {}
+    for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
+        if fila[1] == id_estudiante and fila[4] == periodo: # Solo las del estudiante y periodo
+            dict_materias[str(fila[0]).strip()] = str(fila[1]).strip()  
+
+    # Obtener las matriculas del estudiante valores calculados
+    matriculas_estudiante: list[list[str]] = [
+        ["ID Matrícula", "ID Materia", "Nombre Materia", "Creditos"]
     ]
 
     # Obtener todas las matriculas y listarlas en la factura
     for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
         if str(fila[1]).strip() == id_estudiante and str(fila[4]).strip() == periodo:
+            cod_materia = str(fila[2]).strip()
+            nombre_mat = dict_materias.get(cod_materia, "Materia no encontrada")
             matriculas_estudiante.append([str(fila[0]).strip(),
-                                          str(fila[2]).strip(),
+                                          cod_materia,
+                                          nombre_mat,
                                           str(fila[3]).strip()])
 
-    fecha_actual = date.today().strftime("%Y-%m-%d")
+    fecha_actual = date.today().strftime("%Y-%m-%d")  # noqa: DTZ011
 
     carpeta_facturas = Path(__file__).parent / "Facturas_Matriculas"
     carpeta_facturas.mkdir(exist_ok=True)
@@ -335,6 +364,31 @@ def generar_factura(id_estudiante, periodo):
         )
     )
     contenido.append(tabla)
+    contenido.append(Spacer(1, 12))
+    tabla_estudiante = Table(info_estudiante, colWidths=[5 * cm, 10 * cm])
+    tabla_estudiante.setStyle(
+        TableStyle(
+            [
+                # Encabezado: todas las columnas
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 14),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+
+                # Filas de datos: todas las columnas
+                ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+
+                # Tabla completa
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ]
+        )
+    )
+    contenido.append(tabla_estudiante)
+
+    contenido.append(Spacer(1, 12))
+    contenido.append(Paragraph(f"Total a pagar: {total_creditos}x{VALOR_CREDITO} = ${total_creditos * VALOR_CREDITO}", estilo_texto))
 
     documento.build(contenido)
     print(f"Factura generada exitosamente: {archivo_pdf}")
@@ -356,7 +410,7 @@ def menu_principal():
         elif opcion == "2":
             registrar_materia()
         elif opcion == "3":
-            registrar_matricula()
+            registrar_matricula() #Hola joven
         elif opcion == "4":
             id_estudiante = texto_obligatorio("Ingrese la CC/TI del estudiante: ")
             periodo = texto_obligatorio("Ingrese el periodo a facturar (ej: 2026-2): ")
@@ -372,4 +426,7 @@ def menu_principal():
 
 
 if __name__ == "__main__":
-    menu_principal()
+    try:
+        menu_principal()
+    except KeyboardInterrupt:
+        print("Saliendo por interrupción del teclado...")
