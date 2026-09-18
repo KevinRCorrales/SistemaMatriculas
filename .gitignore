@@ -3,5 +3,6 @@
 .idea
 *.xlsx*
 test.py
-Facturas*/
+Facturas_Matriculas/*
 .vscode/
+Registro_Matriculas.xlsx
