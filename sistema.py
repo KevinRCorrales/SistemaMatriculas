@@ -1,4 +1,4 @@
-import sys
+import sys  # Manejo del sistema
 from datetime import date
 from pathlib import Path
 
@@ -129,8 +129,8 @@ def texto_obligatorio(mensaje):
 
 
 def registrar_estudiante():
-    libro_estudiante = load_workbook(ruta_archivo)
-    hoja_estudiantes = libro_estudiante["Estudiantes"]
+    materia_estudiante = load_workbook(ruta_archivo)
+    hoja_estudiantes = materia_estudiante["Estudiantes"]
 
     cedula = texto_obligatorio("Ingrese CC/TI del estudiante: ")
 
@@ -150,8 +150,8 @@ def registrar_estudiante():
 
 
 def registrar_materia():
-    libro_estudiante = load_workbook(ruta_archivo)
-    hoja_materias = libro_estudiante["Materias"]
+    materia_estudiante = load_workbook(ruta_archivo)
+    hoja_materias = materia_estudiante["Materias"]
 
     codigo_materia = texto_obligatorio("Ingrese el código de la materia: ")
 
@@ -168,7 +168,7 @@ def registrar_materia():
     Guardar_datos(hoja_materias, datos_materias)
 
 
-def generar_id_prestamo(hoja):
+def generar_id_matricula(hoja):
     fecha_hoy = date.today().strftime("%d%m%y")
 
     ultimo_contador = 0
@@ -188,16 +188,23 @@ def generar_id_prestamo(hoja):
     return f"{nuevo_contador:02d}{fecha_hoy}"  # Formato: 01 + ddmmyy
 
 
-def obtener_total_creditos_estudiante():
-    pass
+def obtener_total_creditos_estudiante() -> int:
+    """
+    Obtener los créditos totales que el estudiante ha matriculado en
+    el periodo actual, la función retorna un entero, esto permitirá que más
+    adelante se revise si el estudiante puede matricular más materias o
+    excede los créditos máximos, también si un estudiante tiene menos del
+    mínimo permitido, negandose a generar la factura hasta que cumpla el rango.
+    """
+    return 0 
 
 def registrar_matricula():
-    libro_estudiante = load_workbook(ruta_archivo)
-    hoja_matriculas = libro_estudiante["Matriculas"]
-    hoja_estudiantes = libro_estudiante["Estudiantes"]
-    hoja_materias = libro_estudiante["Materias"]
+    materia = load_workbook(ruta_archivo)
+    hoja_matriculas = materia["Matriculas"]
+    hoja_estudiantes = materia["Estudiantes"]
+    hoja_materias = materia["Materias"]
 
-    id_prestamo = generar_id_prestamo(hoja_matriculas)
+    id_matricula = generar_id_matricula(hoja_matriculas)
 
     id_estudiante = texto_obligatorio("Ingrese la identificación del estudiante: ")
     if not buscar_fila(hoja_estudiantes, 0, id_estudiante):
@@ -226,7 +233,7 @@ def registrar_matricula():
         valor_mora = 0
 
     datos_matricula = [
-        id_prestamo,
+        id_matricula,
         id_estudiante,
         id_materia,
         fecha_matricula,
@@ -239,13 +246,13 @@ def registrar_matricula():
     Guardar_datos(hoja_matriculas, datos_matricula)
 
 
-def generar_factura(id_prestamo):
-    libro = load_workbook(ruta_archivo)
-    hoja_matriculas = libro["Matriculas"]
-    hoja_estudiantes = libro["Estudiantes"]
-    hoja_materias = libro["Materias"]
+def generar_factura(id_matricula):
+    materia = load_workbook(ruta_archivo)
+    hoja_matriculas = materia["Matriculas"]
+    hoja_estudiantes = materia["Estudiantes"]
+    hoja_materias = materia["Materias"]
 
-    fila_matricula = buscar_fila(hoja_matriculas, 0, id_prestamo)
+    fila_matricula = buscar_fila(hoja_matriculas, 0, id_matricula)
     if not fila_matricula:
         print("La matricula con ese ID no existe.")
         return
@@ -253,10 +260,10 @@ def generar_factura(id_prestamo):
     id_estudiante = str(
         fila_matricula[1]
     ).strip()  # Permitir que el ID del estudiante sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
-    id_libro = str(
+    id_materia = str(
         fila_matricula[2]
-    ).strip()  # Permitir que el ID del libro sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
-    fecha_prestamo = fila_matricula[3]
+    ).strip()  # Permitir que el ID del materia sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
+    fecha_matricula = fila_matricula[3]
     fecha_devolucion = fila_matricula[4]
     dias_mora = (
         fila_matricula[6]
@@ -272,15 +279,15 @@ def generar_factura(id_prestamo):
     fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
     nombre_estudiante = fila_estudiante[1] if fila_estudiante else "No registrado"
 
-    fila_libro = buscar_fila(hoja_materias, 0, id_libro)
-    titulo_libro = fila_libro[1] if fila_libro else "No registrado"
+    fila_materia = buscar_fila(hoja_materias, 0, id_materia)
+    nombre_materia = fila_materia[1] if fila_materia else "No registrado"
 
     fecha_actual = date.today().strftime("%Y-%m-%d")
 
     carpeta_facturas = Path(__file__).parent / "Facturas"
     carpeta_facturas.mkdir(exist_ok=True)
 
-    archivo_pdf = carpeta_facturas / f"Factura_{id_prestamo}.pdf"
+    archivo_pdf = carpeta_facturas / f"Factura_{id_matricula}.pdf"
 
     documento = SimpleDocTemplate(
         str(archivo_pdf),
@@ -306,19 +313,18 @@ def generar_factura(id_prestamo):
     contenido = []
     contenido.append(logo)
     contenido.append(Spacer(1, 12))
-    contenido.append(Paragraph("Factura de Préstamo", estilo_titulo))
+    contenido.append(Paragraph("Factura de Matrículas", estilo_titulo))
     contenido.append(Paragraph(f"Fecha: {fecha_actual}", estilo_texto))
     contenido.append(Spacer(1, 12))
 
     datos_tabla = [
         ["Campo", "Valor"],
-        ["ID Préstamo", str(id_prestamo)],
+        ["ID Matrícula", str(id_matricula)],
         ["ID Estudiante", str(id_estudiante)],
         ["Nombre Estudiante", str(nombre_estudiante)],
-        ["ID Libro", str(id_libro)],
-        ["Título Libro", str(titulo_libro)],
-        ["Fecha Préstamo", str(fecha_prestamo)],
-        ["Fecha Devolución", str(fecha_devolucion)],
+        ["ID Materia", str(id_materia)],
+        ["Nombre Materia", str(nombre_materia)],
+        ["Fecha Matrícula", str(fecha_matricula)],
         ["Días Mora", str(dias_mora)],
         ["Valor Mora", f"${valor_mora:.2f}"],
     ]
@@ -362,8 +368,8 @@ def menu_principal():
         elif opcion == "3":
             registrar_matricula()
         elif opcion == "4":
-            id_prestamo = texto_obligatorio("Ingrese el ID del préstamo: ")
-            generar_factura(id_prestamo)
+            id_estudiante = texto_obligatorio("Ingrese la CC/TI del estudiante: ")
+            generar_factura(id_estudiante)
         elif opcion == "5":
             print("Saliendo del programa...")
             break
