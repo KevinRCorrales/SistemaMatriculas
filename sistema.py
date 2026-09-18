@@ -1,3 +1,4 @@
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from reportlab.platypus import (  # Elementos para crear el PDF: párrafos, docu
     TableStyle,
 )
 
-ruta_archivo = Path(__file__).parent / "Registro_Biblioteca.xlsx"
+ruta_archivo = Path(__file__).parent / "Registro_Matriculas.xlsx"
 
 
 def crear_archivo_excel():
@@ -31,21 +32,30 @@ def crear_archivo_excel():
         Nuevo_Archivo_Excel = Workbook()
         hoja_estudiante = Nuevo_Archivo_Excel.active
         hoja_estudiante.title = "Estudiantes"
-        hoja_libros = Nuevo_Archivo_Excel.create_sheet("Libros")
-        hoja_prestamos = Nuevo_Archivo_Excel.create_sheet("Préstamos")
+        Nuevo_Archivo_Excel.create_sheet("Materias")
+        Nuevo_Archivo_Excel.create_sheet("Matriculas")
 
         Encabezados = {
-            "Estudiantes": ["ID", "Nombre", "Apellido", "Correo", "Telefono", "Grado"],
-            "Libros": ["ID", "Título", "Autor", "Año", "Editorial"],
-            "Préstamos": [
+            "Estudiantes": [
+                "Cedula",
+                "Nombre",
+                "Apellido",
+                "Correo",
+                "Telefono",
+            ],
+            "Materias": [
+                "Codigo",
+                "Nombre",
+                "Creditos",
+                "Facultad",
+            ],
+            "Matriculas": [
                 "ID",
-                "ID Estudiante",
-                "ID Libro",
-                "Fecha Préstamo",
-                "Fecha Devolución",
-                "Fecha Entrega",
-                "Dias Mora",
-                "Valor Mora",
+                "Cedula Estudiante",
+                "Codigo Materia",
+                "Creditos",
+                "Periodo",
+                "Fecha Matricula",
             ],
         }
 
@@ -70,7 +80,7 @@ def crear_archivo_excel():
                 )  # Establecer el color de fondo azul para los encabezados
                 celda.alignment = Alignment(
                     horizontal="center", vertical="center"
-                )  ##Alinear el texto de los encabezados al centro horizontal y verticalmente
+                )  # Alinear el texto de los encabezados al centro horizontal y verticalmente
 
         Nuevo_Archivo_Excel.save(ruta_archivo)
         print(f"Archivo de Excel creado exitosamente: {ruta_archivo}")
@@ -102,24 +112,29 @@ def buscar_fila(hoja, columna, valor):
 
 
 def texto_obligatorio(mensaje):
-    while True:
-        valor = (
-            input(mensaje).strip()
-        )  # Eliminar espacios en blanco al inicio y al final de la entrada del usuario
+    intentos = 0
+    while intentos <= 3:
+        valor: str = (
+            input(
+                mensaje
+            ).strip()  # Eliminar espacios en blanco al inicio y al final de la entrada del usuario
+        )
         if valor:  # Si el valor no está vacío, se devuelve el valor ingresado
             return valor
+        intentos += 1
         print("Este campo es obligatorio.")
+    if intentos == 3:
+        print("Demasiados intentos fallidos! Abortando sistema...")
+        sys.exit(1)
 
 
 def registrar_estudiante():
     libro_estudiante = load_workbook(ruta_archivo)
     hoja_estudiantes = libro_estudiante["Estudiantes"]
 
-    # fila_vacia=hoja_estudiantes.max_row + 1
+    cedula = texto_obligatorio("Ingrese CC/TI del estudiante: ")
 
-    identificación = texto_obligatorio("Ingrese la identificación del estudiante: ")
-
-    fila_existente = buscar_fila(hoja_estudiantes, 0, identificación)
+    fila_existente = buscar_fila(hoja_estudiantes, 0, cedula)
     if fila_existente:  # buscar_fila(hoja_estudiantes, 0, identificación):
         print("El estudiante con esa identificación ya existe.")
         return
@@ -128,38 +143,29 @@ def registrar_estudiante():
     apellido = texto_obligatorio("Ingrese el apellido del estudiante: ")
     correo = texto_obligatorio("Ingrese el correo del estudiante: ")
     telefono = texto_obligatorio("Ingrese el teléfono del estudiante: ")
-    grado = texto_obligatorio("Ingrese el grado del estudiante: ")
 
-    datos_estudiante = [identificación, nombre, apellido, correo, telefono, grado]
+    datos_estudiante = [cedula, nombre, apellido, correo, telefono]
 
-    """
-    for columna, valor in enumerate(datos_estudiante, start=1):
-        hoja_estudiantes.cell(row=fila_vacia, column=columna, value=valor)
-
-    libro_estudiante.save(ruta_archivo)
-    print("Datos guardados exitosamente.")
-    """
     Guardar_datos(hoja_estudiantes, datos_estudiante)
 
 
-def registrar_libro():
+def registrar_materia():
     libro_estudiante = load_workbook(ruta_archivo)
-    hoja_libros = libro_estudiante["Libros"]
+    hoja_materias = libro_estudiante["Materias"]
 
-    codigo_libro = texto_obligatorio("Ingrese el código del libro: ")
+    codigo_materia = texto_obligatorio("Ingrese el código de la materia: ")
 
-    if buscar_fila(hoja_libros, 0, codigo_libro):
-        print("El libro con ese código ya existe.")
+    if buscar_fila(hoja_materias, 0, codigo_materia):
+        print("La materia con ese código ya existe.")
         return
 
-    titulo = texto_obligatorio("Ingrese el título del libro: ")
-    autor = texto_obligatorio("Ingrese el autor del libro: ")
-    año = texto_obligatorio("Ingrese el año de publicación del libro: ")
-    editorial = texto_obligatorio("Ingrese la editorial del libro: ")
+    nombre = texto_obligatorio("Ingrese el nombre de la materia: ")
+    creditos = texto_obligatorio("Ingrese los créditos de la materia: ")
+    facultad = texto_obligatorio("Ingrese la facultad de la materia: ")
 
-    datos_libro = [codigo_libro, titulo, autor, año, editorial]
+    datos_materias = [codigo_materia, nombre, creditos, facultad]
 
-    Guardar_datos(hoja_libros, datos_libro)
+    Guardar_datos(hoja_materias, datos_materias)
 
 
 def generar_id_prestamo(hoja):
@@ -182,28 +188,28 @@ def generar_id_prestamo(hoja):
     return f"{nuevo_contador:02d}{fecha_hoy}"  # Formato: 01 + ddmmyy
 
 
-def registrar_prestamo():
+def obtener_total_creditos_estudiante():
+    pass
+
+def registrar_matricula():
     libro_estudiante = load_workbook(ruta_archivo)
-    hoja_prestamos = libro_estudiante["Préstamos"]
+    hoja_matriculas = libro_estudiante["Matriculas"]
     hoja_estudiantes = libro_estudiante["Estudiantes"]
-    hoja_libros = libro_estudiante["Libros"]
+    hoja_materias = libro_estudiante["Materias"]
 
-    fecha_prestamo = date.today().strftime("%Y-%m-%d")
-    ultimo_contador = 0
-
-    id_prestamo = generar_id_prestamo(hoja_prestamos)
+    id_prestamo = generar_id_prestamo(hoja_matriculas)
 
     id_estudiante = texto_obligatorio("Ingrese la identificación del estudiante: ")
     if not buscar_fila(hoja_estudiantes, 0, id_estudiante):
         print("El estudiante no está registrado.")
         return
 
-    id_libro = texto_obligatorio("Ingrese el código del libro: ")
-    if not buscar_fila(hoja_libros, 0, id_libro):
-        print("El libro no está registrado.")
+    id_materia = texto_obligatorio("Ingrese el código de la materia: ")
+    if not buscar_fila(hoja_materias, 0, id_materia):
+        print("La materia no está registrada.")
         return
 
-    fecha_prestamo = date.today().strftime("%Y-%m-%d")
+    fecha_matricula = date.today().strftime("%Y-%m-%d")
     fecha_devolucion = texto_obligatorio(
         "Ingrese la fecha de devolución (YYYY-MM-DD): "
     )
@@ -219,54 +225,54 @@ def registrar_prestamo():
         dias_mora = 0
         valor_mora = 0
 
-    datos_prestamo = [
+    datos_matricula = [
         id_prestamo,
         id_estudiante,
-        id_libro,
-        fecha_prestamo,
+        id_materia,
+        fecha_matricula,
         fecha_devolucion,
         fecha_entrega,
         dias_mora,
         valor_mora,
     ]
 
-    Guardar_datos(hoja_prestamos, datos_prestamo)
+    Guardar_datos(hoja_matriculas, datos_matricula)
 
 
 def generar_factura(id_prestamo):
     libro = load_workbook(ruta_archivo)
-    hoja_prestamos = libro["Préstamos"]
+    hoja_matriculas = libro["Matriculas"]
     hoja_estudiantes = libro["Estudiantes"]
-    hoja_libros = libro["Libros"]
+    hoja_materias = libro["Materias"]
 
-    fila_prestamo = buscar_fila(hoja_prestamos, 0, id_prestamo)
-    if not fila_prestamo:
-        print("El préstamo con ese ID no existe.")
+    fila_matricula = buscar_fila(hoja_matriculas, 0, id_prestamo)
+    if not fila_matricula:
+        print("La matricula con ese ID no existe.")
         return
 
     id_estudiante = str(
-        fila_prestamo[1]
+        fila_matricula[1]
     ).strip()  # Permitir que el ID del estudiante sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
     id_libro = str(
-        fila_prestamo[2]
+        fila_matricula[2]
     ).strip()  # Permitir que el ID del libro sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
-    fecha_prestamo = fila_prestamo[3]
-    fecha_devolucion = fila_prestamo[4]
+    fecha_prestamo = fila_matricula[3]
+    fecha_devolucion = fila_matricula[4]
     dias_mora = (
-        fila_prestamo[6]
-        if len(fila_prestamo) > 6 and fila_prestamo[6] is not None
+        fila_matricula[6]
+        if len(fila_matricula) > 6 and fila_matricula[6] is not None
         else 0
     )  # Verificar si la fila tiene al menos 7 elementos antes de acceder al índice 6
     valor_mora = (
-        fila_prestamo[7]
-        if len(fila_prestamo) > 7 and fila_prestamo[7] is not None
+        fila_matricula[7]
+        if len(fila_matricula) > 7 and fila_matricula[7] is not None
         else 0
     )  # Verificar si la fila tiene al menos 8 elementos antes de acceder al índice 7
 
     fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
     nombre_estudiante = fila_estudiante[1] if fila_estudiante else "No registrado"
 
-    fila_libro = buscar_fila(hoja_libros, 0, id_libro)
+    fila_libro = buscar_fila(hoja_materias, 0, id_libro)
     titulo_libro = fila_libro[1] if fila_libro else "No registrado"
 
     fecha_actual = date.today().strftime("%Y-%m-%d")
@@ -340,18 +346,21 @@ def generar_factura(id_prestamo):
 
 def menu_principal():
     crear_archivo_excel()
-    while True:
-        print("\n--- Menú Principal ---")
-        print(
-            "1. Registrar estudiante\n2. Registrar libro\n3. Registrar préstamo\n4. Generar Factura\n5. Salir"
-        )
+    intentos = 0
+    while intentos <= 3:
+        print("""\n--- Menú Principal ---
+1. Registrar estudiante
+2. Registrar materia
+3. Matricular estudiante
+4. Generar recibo de matrícula
+5. Salir""")
         opcion = input("Seleccione una opción: ").strip()
         if opcion == "1":
             registrar_estudiante()
         elif opcion == "2":
-            registrar_libro()
+            registrar_materia()
         elif opcion == "3":
-            registrar_prestamo()
+            registrar_matricula()
         elif opcion == "4":
             id_prestamo = texto_obligatorio("Ingrese el ID del préstamo: ")
             generar_factura(id_prestamo)
@@ -360,6 +369,10 @@ def menu_principal():
             break
         else:
             print("Opción no válida. Intente de nuevo.")
+            intentos += 1
+        if intentos == 3:
+            print("Demasiados intentos fallidos! Abortando programa...")
 
 
-menu_principal()
+if __name__ == "__main__":
+    menu_principal()
