@@ -25,6 +25,7 @@ from reportlab.platypus import (  # Elementos para crear el PDF: párrafos, docu
 )
 
 ruta_archivo = Path(__file__).parent / "Registro_Matriculas.xlsx"
+VALOR_CREDITO: int = 70_000
 
 
 def crear_archivo_excel():
@@ -188,7 +189,7 @@ def generar_id_matricula(hoja):
     return f"{nuevo_contador:02d}{fecha_hoy}"  # Formato: 01 + ddmmyy
 
 
-def obtener_total_creditos_estudiante() -> int:
+def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
     """
     Obtener los créditos totales que el estudiante ha matriculado en
     el periodo actual, la función retorna un entero, esto permitirá que más
@@ -196,7 +197,15 @@ def obtener_total_creditos_estudiante() -> int:
     excede los créditos máximos, también si un estudiante tiene menos del
     mínimo permitido, negandose a generar la factura hasta que cumpla el rango.
     """
-    return 0 
+    total_creditos: int = 0
+    for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
+        cedula_fila = str(fila[1]).strip()
+        periodo_fila = str(fila[4]).strip()
+        if cedula_fila == cedula and periodo_fila == periodo:
+            total_creditos += int(str(fila[3]).strip())
+
+    return total_creditos
+
 
 def registrar_matricula():
     materia = load_workbook(ruta_archivo)
@@ -210,83 +219,73 @@ def registrar_matricula():
     if not buscar_fila(hoja_estudiantes, 0, id_estudiante):
         print("El estudiante no está registrado.")
         return
+    
+    fecha_matricula = date.today().strftime("%Y-%m-%d")
+    fecha_list = fecha_matricula.split("-")  # Convertir str a list usando '-' como separador
+    periodo = fecha_list[0]  # Año
+
+    total_creditos = obtener_total_creditos_estudiante(hoja_matriculas, id_estudiante, periodo) 
+
+    if total_creditos == 18:
+        print("El estudiante tiene el máximo de créditos matriculados. No se pueden matricular más materias.")
+        return
 
     id_materia = texto_obligatorio("Ingrese el código de la materia: ")
     if not buscar_fila(hoja_materias, 0, id_materia):
         print("La materia no está registrada.")
         return
 
-    fecha_matricula = date.today().strftime("%Y-%m-%d")
-    fecha_devolucion = texto_obligatorio(
-        "Ingrese la fecha de devolución (YYYY-MM-DD): "
-    )
-    fecha_entrega = texto_obligatorio("Ingrese la fecha de entrega (YYYY-MM-DD): ")
-
-    if fecha_entrega > fecha_devolucion:
-        print("La fecha de entrega supera la fecha de devolución")
-        dias_mora = (
-            date.fromisoformat(fecha_entrega) - date.fromisoformat(fecha_devolucion)
-        ).days
-        valor_mora = dias_mora * 2000
+    # Si el mes es el mes 6 o anterior, usamos el periodo 1 (primer semestre)
+    # De lo contrario usamos el periodo 2 (Segundo semestre)
+    if int(fecha_list[1]) <= 6:
+        periodo = f"{periodo}-1"
     else:
-        dias_mora = 0
-        valor_mora = 0
+        periodo = f"{periodo}-2"
 
+    creditos = 0
+
+    for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
+        if str(fila[0]).strip() == id_materia:
+            creditos = str(fila[2]).strip()
+            break
+
+    if (total_creditos + int(creditos)) >= 18:
+        print("No se puede matricular esta materia ya que supera el número máximo de créditos.")
+        return
+    
     datos_matricula = [
         id_matricula,
         id_estudiante,
         id_materia,
+        creditos,
+        periodo,
         fecha_matricula,
-        fecha_devolucion,
-        fecha_entrega,
-        dias_mora,
-        valor_mora,
     ]
 
     guardar_datos(hoja_matriculas, datos_matricula)
 
 
-def generar_factura(id_matricula):
+def generar_factura(id_estudiante, periodo):
     materia = load_workbook(ruta_archivo)
     hoja_matriculas = materia["Matriculas"]
-    hoja_estudiantes = materia["Estudiantes"]
-    hoja_materias = materia["Materias"]
 
-    fila_matricula = buscar_fila(hoja_matriculas, 0, id_matricula)
-    if not fila_matricula:
-        print("La matricula con ese ID no existe.")
-        return
+    matriculas_estudiante = [
+        ["ID Matrícula", "ID Materia", "Creditos"]
+    ]
 
-    id_estudiante = str(
-        fila_matricula[1]
-    ).strip()  # Permitir que el ID del estudiante sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
-    id_materia = str(
-        fila_matricula[2]
-    ).strip()  # Permitir que el ID del materia sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
-    fecha_matricula = fila_matricula[3]
-    dias_mora = (
-        fila_matricula[6]
-        if len(fila_matricula) > 6 and fila_matricula[6] is not None
-        else 0
-    )  # Verificar si la fila tiene al menos 7 elementos antes de acceder al índice 6
-    valor_mora = (
-        fila_matricula[7]
-        if len(fila_matricula) > 7 and fila_matricula[7] is not None
-        else 0
-    )  # Verificar si la fila tiene al menos 8 elementos antes de acceder al índice 7
-
-    fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
-    nombre_estudiante = fila_estudiante[1] if fila_estudiante else "No registrado"
-
-    fila_materia = buscar_fila(hoja_materias, 0, id_materia)
-    nombre_materia = fila_materia[1] if fila_materia else "No registrado"
+    # Obtener todas las matriculas y listarlas en la factura
+    for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
+        if str(fila[1]).strip() == id_estudiante and str(fila[4]).strip() == periodo:
+            matriculas_estudiante.append([str(fila[0]).strip(),
+                                          str(fila[2]).strip(),
+                                          str(fila[3]).strip()])
 
     fecha_actual = date.today().strftime("%Y-%m-%d")
 
-    carpeta_facturas = Path(__file__).parent / "Facturas"
+    carpeta_facturas = Path(__file__).parent / "Facturas_Matriculas"
     carpeta_facturas.mkdir(exist_ok=True)
 
-    archivo_pdf = carpeta_facturas / f"Factura_{id_matricula}.pdf"
+    archivo_pdf = carpeta_facturas / f"Factura_{id_estudiante}.pdf"
 
     documento = SimpleDocTemplate(
         str(archivo_pdf),
@@ -302,7 +301,6 @@ def generar_factura(id_matricula):
     estilo_titulo.alignment = TA_CENTER
     estilo_texto = estilos["BodyText"]
 
-    # logo
     logo_path = Path(__file__).parent / "logo.png"
     if logo_path.exists():
         logo = Image(str(logo_path), width=4 * cm, height=4 * cm)
@@ -316,30 +314,23 @@ def generar_factura(id_matricula):
     contenido.append(Paragraph(f"Fecha: {fecha_actual}", estilo_texto))
     contenido.append(Spacer(1, 12))
 
-    datos_tabla = [
-        ["Campo", "Valor"],
-        ["ID Matrícula", str(id_matricula)],
-        ["ID Estudiante", str(id_estudiante)],
-        ["Nombre Estudiante", str(nombre_estudiante)],
-        ["ID Materia", str(id_materia)],
-        ["Nombre Materia", str(nombre_materia)],
-        ["Fecha Matrícula", str(fecha_matricula)],
-        ["Días Mora", str(dias_mora)],
-        ["Valor Mora", f"${valor_mora:.2f}"],
-    ]
-
-    tabla = Table(datos_tabla, colWidths=[6 * cm, 10 * cm])
+    tabla = Table(matriculas_estudiante, colWidths=[5 * cm, 5 * cm, 5 * cm])
     tabla.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (1, 0), colors.grey),
-                ("TEXTCOLOR", (0, 0), (1, 0), colors.white),
-                ("ALIGN", (0, 0), (1, 0), "CENTER"),
-                ("FONTNAME", (0, 0), (1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (1, 0), 14),
-                ("BOTTOMPADDING", (0, 0), (1, 0), 12),
-                ("BACKGROUND", (0, 1), (1, -1), colors.beige),
-                ("GRID", (0, 0), (1, -1), 1, colors.black),
+                # Encabezado: todas las columnas
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 14),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+
+                # Filas de datos: todas las columnas
+                ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+
+                # Tabla completa
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
             ]
         )
     )
@@ -368,7 +359,8 @@ def menu_principal():
             registrar_matricula()
         elif opcion == "4":
             id_estudiante = texto_obligatorio("Ingrese la CC/TI del estudiante: ")
-            generar_factura(id_estudiante)
+            periodo = texto_obligatorio("Ingrese el periodo a facturar (ej: 2026-2): ")
+            generar_factura(id_estudiante, periodo)
         elif opcion == "5":
             print("Saliendo del programa...")
             break
