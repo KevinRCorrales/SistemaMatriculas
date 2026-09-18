@@ -35,7 +35,7 @@ def crear_archivo_excel():
         Nuevo_Archivo_Excel.create_sheet("Materias")
         Nuevo_Archivo_Excel.create_sheet("Matriculas")
 
-        Encabezados = {
+        Encabezados: dict[str, list[str]] = {
             "Estudiantes": [
                 "Cedula",
                 "Nombre",
@@ -91,7 +91,7 @@ def crear_archivo_excel():
     return Nuevo_Archivo_Excel
 
 
-def Guardar_datos(hoja, datos):
+def guardar_datos(hoja, datos):
     hoja.append(datos)  # Agregar los datos a la hoja de cálculo
     hoja.parent.save(ruta_archivo)  # Guardar los cambios en el archivo de Excel
     print("Datos guardados exitosamente.")
@@ -102,8 +102,8 @@ def buscar_fila(hoja, columna, valor):
         str(valor).strip().lower()
     )  # Convertir el valor a minúsculas y eliminar espacios en blanco al inicio y al final para una búsqueda más flexible.
     for fila in hoja.iter_rows(
-        min_row=2, values_only=True
-    ):  # Comenzar desde la fila 2 para omitir los encabezados
+        min_row=2, values_only=True  # Comenzar desde la fila 2 para omitir los encabezados
+    ):
         if (
             str(fila[columna]).strip().lower() == buscado
         ):  # Comparar el valor de la celda con el valor buscado, ignorando mayúsculas y minúsculas y espacios en blanco
@@ -125,7 +125,7 @@ def texto_obligatorio(mensaje):
         print("Este campo es obligatorio.")
     if intentos == 3:
         print("Demasiados intentos fallidos! Abortando sistema...")
-        sys.exit(1)
+        sys.exit(1)  # Salir con código de error 1
 
 
 def registrar_estudiante():
@@ -135,7 +135,7 @@ def registrar_estudiante():
     cedula = texto_obligatorio("Ingrese CC/TI del estudiante: ")
 
     fila_existente = buscar_fila(hoja_estudiantes, 0, cedula)
-    if fila_existente:  # buscar_fila(hoja_estudiantes, 0, identificación):
+    if fila_existente:
         print("El estudiante con esa identificación ya existe.")
         return
 
@@ -146,7 +146,7 @@ def registrar_estudiante():
 
     datos_estudiante = [cedula, nombre, apellido, correo, telefono]
 
-    Guardar_datos(hoja_estudiantes, datos_estudiante)
+    guardar_datos(hoja_estudiantes, datos_estudiante)
 
 
 def registrar_materia():
@@ -165,7 +165,7 @@ def registrar_materia():
 
     datos_materias = [codigo_materia, nombre, creditos, facultad]
 
-    Guardar_datos(hoja_materias, datos_materias)
+    guardar_datos(hoja_materias, datos_materias)
 
 
 def generar_id_matricula(hoja):
@@ -243,7 +243,7 @@ def registrar_matricula():
         valor_mora,
     ]
 
-    Guardar_datos(hoja_matriculas, datos_matricula)
+    guardar_datos(hoja_matriculas, datos_matricula)
 
 
 def generar_factura(id_matricula):
@@ -264,7 +264,6 @@ def generar_factura(id_matricula):
         fila_matricula[2]
     ).strip()  # Permitir que el ID del materia sea tratado como una cadena de texto y eliminar espacios en blanco al inicio y al final.
     fecha_matricula = fila_matricula[3]
-    fecha_devolucion = fila_matricula[4]
     dias_mora = (
         fila_matricula[6]
         if len(fila_matricula) > 6 and fila_matricula[6] is not None
