@@ -3,5 +3,5 @@
 .idea
 *.xlsx*
 test.py
-
+Facturas*/
 .vscode/

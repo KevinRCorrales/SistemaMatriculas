@@ -291,7 +291,7 @@ def generar_factura(id_estudiante, periodo):
     #diccionario de materias para obtener el nombre de la materia a partir del código
     dict_materias: dict[str, str] = {}
     for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-        if fila[1] == id_estudiante and fila[4] == periodo: # Solo las del estudiante y periodo
+        if fila:
             dict_materias[str(fila[0]).strip()] = str(fila[1]).strip()  
 
     # Obtener las matriculas del estudiante valores calculados
@@ -303,7 +303,7 @@ def generar_factura(id_estudiante, periodo):
     for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
         if str(fila[1]).strip() == id_estudiante and str(fila[4]).strip() == periodo:
             cod_materia = str(fila[2]).strip()
-            nombre_mat = dict_materias.get(cod_materia, "Materia no encontrada")
+            nombre_mat = dict_materias[cod_materia]
             matriculas_estudiante.append([str(fila[0]).strip(),
                                           cod_materia,
                                           nombre_mat,
@@ -343,7 +343,7 @@ def generar_factura(id_estudiante, periodo):
     contenido.append(Paragraph(f"Fecha: {fecha_actual}", estilo_texto))
     contenido.append(Spacer(1, 12))
 
-    tabla = Table(matriculas_estudiante, colWidths=[5 * cm, 5 * cm, 5 * cm])
+    tabla = Table(matriculas_estudiante, colWidths=[3.5 * cm, 3 * cm, 6 * cm, 2.5 * cm])
     tabla.setStyle(
         TableStyle(
             [
