@@ -6,3 +6,4 @@ test.py
 Facturas_Matriculas/*
 .vscode/
 Registro_Matriculas.xlsx
+__pycache__

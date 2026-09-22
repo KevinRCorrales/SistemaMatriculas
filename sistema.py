@@ -22,6 +22,9 @@ from reportlab.platypus import (  # Elementos para crear el PDF: párrafos, docu
     Table,
     TableStyle,
 )
+from rich import print  # print con mejoras
+
+from cli import prompt
 
 ruta_archivo = Path(__file__).parent / "Registro_Matriculas.xlsx"
 VALOR_CREDITO: int = 70_000
@@ -102,7 +105,8 @@ def buscar_fila(hoja, columna, valor):
         str(valor).strip().lower()
     )  # Convertir el valor a minúsculas y eliminar espacios en blanco al inicio y al final para una búsqueda más flexible.
     for fila in hoja.iter_rows(
-        min_row=2, values_only=True  # Comenzar desde la fila 2 para omitir los encabezados
+        min_row=2,
+        values_only=True,  # Comenzar desde la fila 2 para omitir los encabezados
     ):
         if (
             str(fila[columna]).strip().lower() == buscado
@@ -111,38 +115,21 @@ def buscar_fila(hoja, columna, valor):
     return None
 
 
-def texto_obligatorio(mensaje):
-    intentos = 0
-    while intentos <= 3:
-        valor: str = (
-            input(
-                mensaje
-            ).strip()  # Eliminar espacios en blanco al inicio y al final de la entrada del usuario
-        )
-        if valor:  # Si el valor no está vacío, se devuelve el valor ingresado
-            return valor
-        intentos += 1
-        print("Este campo es obligatorio.")
-    if intentos == 3:
-        print("Demasiados intentos fallidos! Abortando...")
-        return
-
-
 def registrar_estudiante():
     materia_estudiante = load_workbook(ruta_archivo)
     hoja_estudiantes = materia_estudiante["Estudiantes"]
 
-    cedula = texto_obligatorio("Ingrese CC/TI del estudiante: ")
+    cedula = prompt("Ingrese CC/TI del estudiante: ")
 
     fila_existente = buscar_fila(hoja_estudiantes, 0, cedula)
     if fila_existente:
         print("El estudiante con esa identificación ya existe.")
         return
 
-    nombre = texto_obligatorio("Ingrese el nombre del estudiante: ")
-    apellido = texto_obligatorio("Ingrese el apellido del estudiante: ")
-    correo = texto_obligatorio("Ingrese el correo del estudiante: ")
-    telefono = texto_obligatorio("Ingrese el teléfono del estudiante: ")
+    nombre = prompt("Ingrese el nombre del estudiante: ")
+    apellido = prompt("Ingrese el apellido del estudiante: ")
+    correo = prompt("Ingrese el correo del estudiante: ")
+    telefono = prompt("Ingrese el teléfono del estudiante: ")
 
     datos_estudiante = [cedula, nombre, apellido, correo, telefono]
 
@@ -153,15 +140,15 @@ def registrar_materia():
     materia_estudiante = load_workbook(ruta_archivo)
     hoja_materias = materia_estudiante["Materias"]
 
-    codigo_materia = texto_obligatorio("Ingrese el código de la materia: ")
+    codigo_materia = prompt("Ingrese el código de la materia: ")
 
     if buscar_fila(hoja_materias, 0, codigo_materia):
         print("La materia con ese código ya existe.")
         return
 
-    nombre = texto_obligatorio("Ingrese el nombre de la materia: ")
-    creditos = texto_obligatorio("Ingrese los créditos de la materia: ")
-    facultad = texto_obligatorio("Ingrese la facultad de la materia: ")
+    nombre = prompt("Ingrese el nombre de la materia: ")
+    creditos = prompt("Ingrese los créditos de la materia: ")
+    facultad = prompt("Ingrese la facultad de la materia: ")
 
     datos_materias = [codigo_materia, nombre, creditos, facultad]
 
@@ -214,22 +201,28 @@ def registrar_matricula():
 
     id_matricula = generar_id_matricula(hoja_matriculas)
 
-    id_estudiante = texto_obligatorio("Ingrese la identificación del estudiante: ")
+    id_estudiante = prompt("Ingrese la identificación del estudiante: ")
     if not buscar_fila(hoja_estudiantes, 0, id_estudiante):
         print("El estudiante no está registrado.")
         return
-    
+
     fecha_matricula = date.today().strftime("%Y-%m-%d")  # noqa: DTZ011
-    fecha_list = fecha_matricula.split("-")  # Convertir str a list usando '-' como separador
+    fecha_list = fecha_matricula.split(
+        "-"
+    )  # Convertir str a list usando '-' como separador
     periodo = fecha_list[0]  # Año
 
-    total_creditos = obtener_total_creditos_estudiante(hoja_matriculas, id_estudiante, periodo) 
+    total_creditos = obtener_total_creditos_estudiante(
+        hoja_matriculas, id_estudiante, periodo
+    )
 
     if total_creditos == 18:
-        print("El estudiante tiene el máximo de créditos matriculados. No se pueden matricular más materias.")
+        print(
+            "El estudiante tiene el máximo de créditos matriculados. No se pueden matricular más materias."
+        )
         return
 
-    id_materia = texto_obligatorio("Ingrese el código de la materia: ")
+    id_materia = prompt("Ingrese el código de la materia: ")
     if not buscar_fila(hoja_materias, 0, id_materia):
         print("La materia no está registrada.")
         return
@@ -249,9 +242,11 @@ def registrar_matricula():
             break
 
     if (total_creditos + int(creditos)) >= 18:
-        print("No se puede matricular esta materia ya que supera el número máximo de créditos.")
+        print(
+            "No se puede matricular esta materia ya que supera el número máximo de créditos."
+        )
         return
-    
+
     datos_matricula = [
         id_matricula,
         id_estudiante,
@@ -268,31 +263,38 @@ def generar_factura(id_estudiante, periodo):
     hoja_matriculas = materia["Matriculas"]
     hoja_estudiantes = materia["Estudiantes"]
     hoja_materias = materia["Materias"]
-    
-    #Obtengo la información del estudiante
+
+    # Obtengo la información del estudiante
     fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
     if not fila_estudiante:
         print("El estudiante no está registrado.")
         return
 
-    total_creditos = obtener_total_creditos_estudiante(hoja_matriculas, id_estudiante, periodo)
+    total_creditos = obtener_total_creditos_estudiante(
+        hoja_matriculas, id_estudiante, periodo
+    )
     if total_creditos < 2:
-        print(f"No se puede generar la factura: El estudiante solo tiene {total_creditos} crédito(s) matriculado(s). Se requiere un mínimo de 2 créditos.")
+        print(
+            f"No se puede generar la factura: El estudiante solo tiene {total_creditos} crédito(s) matriculado(s). Se requiere un mínimo de 2 créditos."
+        )
         return
-        
+
     info_estudiante: list[list[str]] = [
-        ["Campo", "Valor"], # Encabezado de la tabla
+        ["Campo", "Valor"],  # Encabezado de la tabla
         ["Cedula", str(fila_estudiante[0]).strip()],
-        ["Nombre completo", str(fila_estudiante[1]).strip() + " " + str(fila_estudiante[2]).strip()],
+        [
+            "Nombre completo",
+            str(fila_estudiante[1]).strip() + " " + str(fila_estudiante[2]).strip(),
+        ],
         ["Correo", str(fila_estudiante[3]).strip()],
         ["Telefono", str(fila_estudiante[4]).strip()],
     ]
 
-    #diccionario de materias para obtener el nombre de la materia a partir del código
+    # diccionario de materias para obtener el nombre de la materia a partir del código
     dict_materias: dict[str, str] = {}
     for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
         if fila:
-            dict_materias[str(fila[0]).strip()] = str(fila[1]).strip()  
+            dict_materias[str(fila[0]).strip()] = str(fila[1]).strip()
 
     # Obtener las matriculas del estudiante valores calculados
     matriculas_estudiante: list[list[str]] = [
@@ -304,10 +306,9 @@ def generar_factura(id_estudiante, periodo):
         if str(fila[1]).strip() == id_estudiante and str(fila[4]).strip() == periodo:
             cod_materia = str(fila[2]).strip()
             nombre_mat = dict_materias[cod_materia]
-            matriculas_estudiante.append([str(fila[0]).strip(),
-                                          cod_materia,
-                                          nombre_mat,
-                                          str(fila[3]).strip()])
+            matriculas_estudiante.append(
+                [str(fila[0]).strip(), cod_materia, nombre_mat, str(fila[3]).strip()]
+            )
 
     fecha_actual = date.today().strftime("%Y-%m-%d")  # noqa: DTZ011
 
@@ -354,10 +355,8 @@ def generar_factura(id_estudiante, periodo):
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 14),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-
                 # Filas de datos: todas las columnas
                 ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-
                 # Tabla completa
                 ("GRID", (0, 0), (-1, -1), 1, colors.black),
             ]
@@ -376,10 +375,8 @@ def generar_factura(id_estudiante, periodo):
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 14),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-
                 # Filas de datos: todas las columnas
                 ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-
                 # Tabla completa
                 ("GRID", (0, 0), (-1, -1), 1, colors.black),
             ]
@@ -388,7 +385,12 @@ def generar_factura(id_estudiante, periodo):
     contenido.append(tabla_estudiante)
 
     contenido.append(Spacer(1, 12))
-    contenido.append(Paragraph(f"Total a pagar: {total_creditos}x{VALOR_CREDITO} = ${total_creditos * VALOR_CREDITO}", estilo_texto))
+    contenido.append(
+        Paragraph(
+            f"Total a pagar: {total_creditos}x{VALOR_CREDITO} = ${total_creditos * VALOR_CREDITO}",
+            estilo_texto,
+        )
+    )
 
     documento.build(contenido)
     print(f"Factura generada exitosamente: {archivo_pdf}")
@@ -404,16 +406,16 @@ def menu_principal():
 3. Matricular estudiante
 4. Generar recibo de matrícula
 5. Salir""")
-        opcion = input("Seleccione una opción: ").strip()
+        opcion = prompt("Seleccione una opción: ", False)
         if opcion == "1":
             registrar_estudiante()
         elif opcion == "2":
             registrar_materia()
         elif opcion == "3":
-            registrar_matricula() #Hola joven
+            registrar_matricula()  # Hola joven
         elif opcion == "4":
-            id_estudiante = texto_obligatorio("Ingrese la CC/TI del estudiante: ")
-            periodo = texto_obligatorio("Ingrese el periodo a facturar (ej: 2026-2): ")
+            id_estudiante = prompt("Ingrese la CC/TI del estudiante: ")
+            periodo = prompt("Ingrese el periodo a facturar (ej: 2026-2): ")
             generar_factura(id_estudiante, periodo)
         elif opcion == "5":
             print("Saliendo del programa...")
