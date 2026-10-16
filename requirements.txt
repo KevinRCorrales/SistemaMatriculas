@@ -1,3 +1,4 @@
 openpyxl
 reportlab
 rich
+sv_ttk
