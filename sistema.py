@@ -259,9 +259,6 @@ def registrar_materia():
     libro = load_workbook(ruta_archivo)
     hoja_materias = libro["Materias"]
 
-    def validar_materia(datos):
-        guardar_datos(hoja_materias, datos)
-
     rm_window = tk.Tk()
     rm_window.title("Registrar Materia")
     rm_window.minsize(300, 350)
@@ -329,68 +326,99 @@ def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
 
 
 def registrar_matricula():
-    materia = load_workbook(ruta_archivo)
-    hoja_matriculas = materia["Matriculas"]
-    hoja_estudiantes = materia["Estudiantes"]
-    hoja_materias = materia["Materias"]
+    libro = load_workbook(ruta_archivo)
+    hoja_matriculas = libro["Matriculas"]
+    hoja_estudiantes = libro["Estudiantes"]
+    hoja_materias = libro["Materias"]
+    
+    def procesar_matricula(datos):
+        datos_registro = [generar_id_matricula(hoja_matriculas)]
 
-    id_matricula = generar_id_matricula(hoja_matriculas)
+        id_get = datos[0].get().strip()
+        datos_registro.append(id_get)
 
-    id_estudiante = input("Ingrese la identificación del estudiante: ")
-    if not buscar_fila(hoja_estudiantes, 0, id_estudiante):
-        consola.log("El estudiante no está registrado.")
-        return
+        nombre_materia = datos[1].get().strip()
+        materia_id = buscar_fila(hoja_materias, 1, nombre_materia)[0]
+        datos_registro.append(materia_id)
 
-    fecha_matricula = date.today().strftime("%Y-%m-%d")
-    fecha_list = fecha_matricula.split(
-        "-"
-    )  # Convertir str a list usando '-' como separador
-    periodo = fecha_list[0]  # Año
+        if not buscar_fila(hoja_estudiantes, 0, id_get):
+            messagebox.showinfo("Fallo de registro", "El estudiante no está registrado.")
+            return
 
-    total_creditos = obtener_total_creditos_estudiante(
-        hoja_matriculas, id_estudiante, periodo
-    )
+        fecha_matricula = date.today().strftime("%Y-%m-%d")
+        fecha_list = fecha_matricula.split(
+            "-"
+        )  # Convertir str a list usando '-' como separador
+        periodo = fecha_list[0]  # Año
 
-    if total_creditos == 18:
-        consola.log(
-            "El estudiante tiene el máximo de créditos matriculados. No se pueden matricular más materias."
+        total_creditos = obtener_total_creditos_estudiante(
+            hoja_matriculas, id_get, periodo
         )
-        return
 
-    id_materia = input("Ingrese el código de la materia: ")
-    if not buscar_fila(hoja_materias, 0, id_materia):
-        consola.log("La materia no está registrada.")
-        return
+        if total_creditos == 18:
+            messagebox.showinfo(
+                "Fallo de registro",
+                "El estudiante tiene el máximo de créditos matriculados.\nNo se pueden matricular más materias."
+            )
+            return
 
-    # Si el mes es el mes 6 o anterior, usamos el periodo 1 (primer semestre)
-    # De lo contrario usamos el periodo 2 (Segundo semestre)
-    if int(fecha_list[1]) <= 6:
-        periodo = f"{periodo}-1"
-    else:
-        periodo = f"{periodo}-2"
+        if not buscar_fila(hoja_materias, 1, nombre_materia):
+            messagebox.showinfo("Fallo de registro", "La materia no está registrada.")
+            return
 
-    creditos = 0
+        # Si el mes es el mes 6 o anterior, usamos el periodo 1 (primer semestre)
+        # De lo contrario usamos el periodo 2 (Segundo semestre)
+        if int(fecha_list[1]) <= 6:
+            periodo = f"{periodo}-1"
+        else:
+            periodo = f"{periodo}-2"
+
+        datos_registro.append(periodo)
+
+        creditos = buscar_fila(hoja_materias, 0, materia_id)[2]
+
+        datos_registro.append(creditos)
+        datos_registro.append(fecha_matricula)
+
+        if (total_creditos + int(creditos)) >= 18:
+            messagebox.showinfo(
+                "Fallo de registro",
+                "La materia seleccionada excede el total de créditos permitidos."
+            )
+            return
+        guardar_datos(hoja_matriculas, datos_registro)
+
+    materias = []
 
     for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-        if str(fila[0]).strip() == id_materia:
-            creditos = str(fila[2]).strip()
-            break
+        materias.append(str(fila[1]).strip())
 
-    if (total_creditos + int(creditos)) >= 18:
-        consola.log(
-            "No se puede matricular esta materia ya que supera el número máximo de créditos."
-        )
-        return
+    rma_window = tk.Tk()
+    rma_window.title("Registrar Matrícula")
+    rma_window.minsize(400, 300)
 
-    datos_matricula = [
-        id_matricula,
-        id_estudiante,
-        id_materia,
-        creditos,
-        periodo,
-        fecha_matricula,
-    ]
-    guardar_datos(hoja_matriculas, datos_matricula)
+    ttk.Label(rma_window, text="Ingrese la identificación del estudiante:").pack(padx=5, pady=5)
+    id_estudiante = ttk.Entry(rma_window, width=30)
+    id_estudiante.pack(padx=5, pady=5)
+
+    # Esto ahorra tener que validar a mano si la materia existe
+    ttk.Label(rma_window, text="Seleccione la materia:").pack(padx=5, pady=5)
+    materia = ttk.Combobox(rma_window, width=30, state="readonly", values=materias)
+    materia.pack(padx=5, pady=5)
+
+    button(rma_window, "Registrar Matrícula", lambda: procesar_matricula([id_estudiante, materia]))
+
+    sv_ttk.use_dark_theme(rma_window)
+    rma_window.mainloop()
+
+
+def registrar_notas():
+    rn_window = tk.Tk()
+    rn_window.title("Registrar Notas")
+    rn_window.minsize(400, 500)
+
+    sv_ttk.use_dark_theme(rn_window)
+    rn_window.mainloop()
 
 
 def generar_factura(id_estudiante, periodo):
@@ -535,6 +563,7 @@ def menu_principal():
     button(root, "Registrar estudiante", registrar_estudiante)
     button(root, "Registrar materia", registrar_materia)
     button(root, "Matricular estudiante", registrar_matricula)
+    button(root, "Registrar notas", registrar_notas)
     button(root, "Generar recibo de matrícula", generar_factura)
 
     sv_ttk.set_theme("dark")
