@@ -48,6 +48,7 @@ def crear_archivo_excel():
         Nuevo_Archivo_Excel.create_sheet("Matriculas")
         Nuevo_Archivo_Excel.create_sheet("Facultades")
         Nuevo_Archivo_Excel.create_sheet("Notas")
+        Nuevo_Archivo_Excel.create_sheet("Carreras")
 
         Encabezados: dict[str, list[str]] = {
             "Materias": ["Código", "Nombre", "Creditos", "ID_Facultad"],
@@ -56,25 +57,28 @@ def crear_archivo_excel():
                 "Cedula",
                 "Nombres",
                 "Apellidos",
-                "Programa",
                 "Correo",
-                "ID_Facultad",
+                "Telefono",
+                "ID_Carrera",  # llave foranea
             ],
+            "Carreras": ["Id carrera", "Nombre", "ID_Facultad"],
             "Matriculas": [
                 "Id matricula",
                 "Cedula",
                 "Codigo materia",
                 "Periodo",
-                "Creditos",
+                "Creditos",  # Debe estar entre 2 y 12 créditos
                 "Fecha matricula",
             ],
             "Notas": [
-                "Id matricula",
+                "Id_Nota",
+                "id_matricula",
+                "id_materia",
+                "cedula estudiante",
                 "Nota 1",
                 "Nota 2",
                 "Nota 3",
-                "Definitiva",
-                "Estado",
+                "Promedio",
             ],
         }
 
@@ -158,32 +162,73 @@ def registrar_facultad():
     libro = load_workbook(ruta_archivo)
     hoja_facultades = libro["Facultades"]
 
-    def gen_id():
-        nombre_facultad = facultad.get().strip().lower()
+    def guardar(valores):
+        nombre_facultad = valores["nombre_facultad"].strip().lower()
+
         max_id = 0
         for fila in hoja_facultades.iter_rows(min_row=2, values_only=True):
-            if fila[1] == nombre_facultad:
-                messagebox.showerror("Error", "La facultad ya existe.")
-                return
-            max_id = int(fila[0])
+            if fila and len(fila) > 1 and fila[1]:
+                if str(fila[1]).strip().lower() == nombre_facultad:
+                    messagebox.showerror(
+                        title="Error", message="La facultad ya existe." 
+                    )
+                    return False
+                if fila[0] is not None:
+                    try:
+                        max_id = max(max_id, int(fila[0]))
+                    except ValueError:
+                        pass
+        
+        nuevo_id = str(max_id + 1)
+        hoja_facultades.append([nuevo_id, nombre_facultad])
+        libro.save(ruta_archivo)
+        messagebox.showinfo(
+            title="Exito", message="Facultad registrada exitosamente."
+        )
+        return True
+        
+    ventana_formulario(
+        root,
+        "Registrar Facultad",
+        [("nombre_facultad", "Nombre de la facultad:")],
+        guardar,
+    )
 
-        datos_facultad = [str(max_id + 1), nombre_facultad]
-        guardar_datos(hoja_facultades, datos_facultad)
 
-    rf_window = tk.Tk()
-    rf_window.title("Registrar Facultad")
-    rf_window.minsize(300, 120)
+def registrar_carrera():
+    libro = load_workbook(ruta_archivo)
+    hoja_carreras = libro["Carreras"]
+    hoja_facultades = libro["Facultades"]
 
-    ttk.Label(rf_window, text="Ingrese el nombre de la facultad:").pack(padx=5, pady=5)
-    facultad = ttk.Entry(rf_window, width=30)
-    facultad.pack(padx=5, pady=5)
-    button(rf_window, "Registrar", gen_id)
+    def guardar(valores):
+        for carrera in hoja_carreras.iter_rows(min_row=2, values_only=True):
+            if str(carrera[1]).strip().lower() == valores["nombre_carrera"].strip().lower():
+                messagebox.showerror(
+                    title="Error", message="La carrera ya existe."
+                )
+                return False
+        id_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])[0]
+        hoja_carreras.append([siguiente_id(hoja_carreras), valores["nombre_carrera"], id_facultad])
+        libro.save(ruta_archivo)
+        messagebox.showinfo(
+            title="Exito", message="Carrera registrada exitosamente."
+        )
+        return True
+        
+    facultades = []
 
-    sv_ttk.use_dark_theme(rf_window)
-    rf_window.mainloop()
+    for fila in hoja_facultades.iter_rows(min_row=2, values_only=True):
+        facultades.append(str(fila[1]).strip())
+
+    ventana_formulario(
+        root,
+        "Registrar Carrera",
+        [("nombre_carrera", "Nombre de la carrera:"), ("facultad", "Facultad:", facultades)],
+        guardar,
+    )
 
 
-def validar(hoja, datos, columna, id_get, tipo = "estudiante"):
+def validar(hoja, datos, columna, id_get, tipo="estudiante"):
     fila_existente = buscar_fila(hoja, columna, id_get.get())
     if fila_existente:
         if tipo == "estudiante":
@@ -207,85 +252,130 @@ def validar(hoja, datos, columna, id_get, tipo = "estudiante"):
 
 
 def registrar_estudiante():
-    materia_estudiante = load_workbook(ruta_archivo)
-    hoja_estudiantes = materia_estudiante["Estudiantes"]
+    libro = load_workbook(ruta_archivo)
+    hoja_facultades = libro["Facultades"]
+    hoja_carreras = libro["Carreras"]
+    
+    # Obtener lista de facultades para el Combobox
+    carreras = [
+        str(fila[1]).strip()
+        for fila in hoja_carreras.iter_rows(min_row=2, values_only=True)
+        if fila and fila[1]
+    ]
 
-    re_window = tk.Tk()
-    re_window.title("Registrar Estudiante")
-    re_window.minsize(400, 450)
+    if not carreras:
+        messagebox.showwarning(
+            "Carreras requeridas",
+            "Debe registrar al menos una carrera antes de ingresar estudiantes.",
+            parent=root,
+        )
+        return
 
-    ttk.Label(re_window, text="Ingrese CC/TI del estudiante:").pack(padx=5, pady=5)
-    cedula = ttk.Entry(re_window, width=30)
-    cedula.pack(padx=5, pady=5)
+    def guardar(valores):
+        hoja_estudiantes = libro["Estudiantes"]
+        
+        # Validar si la cédula ya existe
+        if buscar_fila(hoja_estudiantes, 0, valores["cedula"]):
+            messagebox.showerror(
+                "Identificación duplicada",
+                "Ya existe un estudiante con esa cédula.",
+                parent=root,
+            )
+            return False
 
-    ttk.Label(re_window, text="Ingrese el nombre del estudiante:").pack(padx=5, pady=5)
-    nombre = ttk.Entry(re_window, width=30)
-    nombre.pack(padx=5, pady=5)
+        # Buscar el ID de la facultad seleccionada
+        fila_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])
+        id_facultad = fila_facultad[0] if fila_facultad else ""
 
-    ttk.Label(re_window, text="Ingrese el apellido del estudiante:").pack(
-        padx=5, pady=5
+        # Guardar en Excel
+        datos = [
+            valores["cedula"],
+            valores["nombre"],
+            valores["apellido"],
+            valores["correo"],
+            valores["telefono"],
+            id_facultad,
+        ]
+        
+        hoja_estudiantes.append(datos)
+        libro.save(ruta_archivo)
+        messagebox.showinfo("Éxito", "Estudiante registrado correctamente.", parent=root)
+        return True
+
+    ventana_formulario(
+        root,
+        "Registrar Estudiante",
+        [
+            ("cedula", "CC/TI:"),
+            ("nombre", "Nombre:"),
+            ("apellido", "Apellido:"),
+            ("correo", "Correo electrónico:"),
+            ("telefono", "Teléfono:"),
+            ("carrera", "Carrera:", carreras),
+        ],
+        guardar,
     )
-    apellido = ttk.Entry(re_window, width=30)
-    apellido.pack(padx=5, pady=5)
-
-    ttk.Label(re_window, text="Ingrese el correo del estudiante:").pack(padx=5, pady=5)
-    correo = ttk.Entry(re_window, width=30)
-    correo.pack(padx=5, pady=5)
-
-    ttk.Label(re_window, text="Ingrese el teléfono del estudiante:").pack(
-        padx=5, pady=5
-    )
-    telefono = ttk.Entry(re_window, width=30)
-    telefono.pack(padx=5, pady=5)
-
-    ttk.Label(
-        re_window, text="Ingrese la facultad a la que pertenecerá el estudiante:"
-    ).pack(padx=5, pady=5)
-    facultad = ttk.Entry(re_window, width=30)
-    facultad.pack(padx=5, pady=5)
-
-    datos_estudiante = [cedula, nombre, apellido, correo, telefono, facultad]
-
-    button(
-        re_window,
-        "Registrar",
-        lambda: validar(hoja_estudiantes, datos_estudiante, 0, cedula),
-    )
-    sv_ttk.use_dark_theme(re_window)
-    re_window.mainloop()
 
 
 def registrar_materia():
     libro = load_workbook(ruta_archivo)
-    hoja_materias = libro["Materias"]
+    hoja_facultades = libro["Facultades"]
 
-    rm_window = tk.Tk()
-    rm_window.title("Registrar Materia")
-    rm_window.minsize(300, 350)
+    facultades = [
+        str(fila[1]).strip()
+        for fila in hoja_facultades.iter_rows(min_row=2, values_only=True)
+        if fila and fila[1]
+    ]
     
-    ttk.Label(rm_window, text="Ingrese el código de la materia:").pack(padx=5, pady=5)
-    codigo_materia = ttk.Entry(rm_window, width=30)
-    codigo_materia.pack(padx=5, pady=5)
+    if not facultades:
+        messagebox.showwarning(
+            "Facultades requeridas",
+            "Debe registrar al menos una facultad antes de ingresar materias.",
+            parent=root,
+        )
+        return
     
-    ttk.Label(rm_window, text="Ingrese el nombre de la materia:").pack(padx=5, pady=5)
-    nombre = ttk.Entry(rm_window, width=30)
-    nombre.pack(padx=5, pady=5)
-    
-    ttk.Label(rm_window, text="Ingrese los créditos de la materia:").pack(padx=5, pady=5)
-    creditos = ttk.Entry(rm_window, width=30)
-    creditos.pack(padx=5, pady=5)
-    
-    ttk.Label(rm_window, text="Ingrese la facultad de la materia:").pack(padx=5, pady=5)
-    facultad = ttk.Entry(rm_window, width=30)
-    facultad.pack(padx=5, pady=5)
-    
-    datos_materia = [codigo_materia, nombre, creditos, facultad]
-    
-    button(rm_window, "Registrar", lambda: validar(hoja_materias, datos_materia, 0, codigo_materia, "materia"))
-    
-    sv_ttk.use_dark_theme(rm_window)
-    rm_window.mainloop()
+    def guardar(valores):
+        hoja_materias = libro["Materias"]
+        
+        # Validar si el código de la materia ya existe
+        if buscar_fila(hoja_materias, 0, valores["codigo"]):
+            messagebox.showerror(
+                "Código duplicado",
+                "Ya existe una materia con ese código.",
+                parent=root,
+            )
+            return False
 
+        # Buscar el ID de la facultad seleccionada
+        fila_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])
+        id_facultad = fila_facultad[0] if fila_facultad else ""
+
+        # Guardar en Excel
+        datos = [
+            valores["codigo"],
+            valores["nombre"],
+            valores["creditos"],
+            id_facultad,
+        ]
+        
+        hoja_materias.append(datos)
+        libro.save(ruta_archivo)
+        messagebox.showinfo("Éxito", "Materia registrada correctamente.", parent=root)
+        return True
+
+    # Crear ventana para registrar materia
+    ventana_formulario(
+        root,
+        "Registrar Materia",
+        [
+            ("codigo", "Código de la materia:"),
+            ("nombre", "Nombre de la materia:"),
+            ("creditos", "Créditos de la materia:"),
+            ("facultad", "Facultad:", facultades), #Muestra la lista de facultades registradas en un Combobox para seleccionar la facultad correspondiente a la materia
+        ],
+        guardar,
+    )
 
 def generar_id_matricula(hoja):
     fecha_hoy = date.today().strftime("%d%m%y")
@@ -326,23 +416,105 @@ def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
 
 
 def registrar_matricula():
+    """
+    Registro de matrículas con menú de añadir, registro de golpe, usando unicamente los créditos que el estudiante
+    va a inscribir, se debe matricular entre 2 y 12 créditos, si el estudiantes selecciona 10 créditos y lleva
+    8 matriculados, y selecciona una materia de 3, se le denegará, solo puede matricular esos 8 créditos o
+    matricular una materia de 2 créditos. Esta función requiere ventana diferente a formulario sencillo.
+    """
     libro = load_workbook(ruta_archivo)
     hoja_matriculas = libro["Matriculas"]
     hoja_estudiantes = libro["Estudiantes"]
     hoja_materias = libro["Materias"]
-    
-    def procesar_matricula(datos):
+    hoja_facultades = libro["Facultades"]
+
+    def procesar_matricula(datos: dict):
+        def validar_materia():
+            nombre_materia = materia.get().strip()
+            info_materia = buscar_fila(hoja_materias, 1, nombre_materia)
+            if creditos_prematricula + int(info_materia[2]) > 12:
+                messagebox.showinfo(
+                    "Fallo de registro",
+                    "La cantidad de créditos a matricular excede el máximo permitido (12).",
+                )
+                return
+            ttk.Label(marco, text=f"{nombre_materia}    {info_materia[2]} créditos").grid(
+                row=2, column=0, sticky="w", padx=(0, 16), pady=7
+            )
         datos_registro = [generar_id_matricula(hoja_matriculas)]
 
-        id_get = datos[0].get().strip()
+        id_get = datos["id_estudiante"]
         datos_registro.append(id_get)
 
-        nombre_materia = datos[1].get().strip()
+        total_creditos = int(datos["creditos"])
+
+        if total_creditos < 2 or total_creditos > 12:
+            messagebox.showinfo(
+                "Fallo de registro",
+                "La cantidad de créditos a matricular debe estar entre 2 y 12.",
+            )
+            return
+
+        pma_window = tk.Toplevel(root)
+        pma_window.title("Seleccionar Materias")
+        pma_window.resizable(False, False) 
+        pma_window.transient(root)
+        pma_window.grab_set()
+
+        marco = ttk.Frame(pma_window, padding=24)
+        marco.grid(sticky="nsew")
+
+        creditos_prematricula = 0
+
+        facultad_estudiante = buscar_fila(hoja_estudiantes, 0, id_get)[6]
+
+        materias_facultad = []
+
+        for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
+            if str(fila[3]).strip() == facultad_estudiante:
+                materias_facultad.append(str(fila[1]).strip())
+
+        # añadir tambien materias generales como humanidades e inglés
+        try:
+            id_humanidades = buscar_fila(hoja_facultades, 1, "humanidades")[0]
+            for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
+                if str(fila[3]).strip() == id_humanidades:
+                    materias_facultad.append(str(fila[1]).strip())
+        except TypeError:
+            pass
+
+        try:
+            id_ingles = buscar_fila(hoja_facultades, 1, "ingles")[0]
+            for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
+                if str(fila[3]).strip() == id_ingles:
+                    materias_facultad.append(str(fila[1]).strip())
+        except TypeError:
+            pass
+
+        ttk.Label(marco, text="Seleccione las materias a matricular:").grid(
+            row=0, column=0, sticky="w", padx=(0, 16), pady=7
+        )
+        materia = ttk.Combobox(
+            marco,
+            width=33,
+            state="readonly",
+            values=materias_facultad,
+        )
+        materia.grid(row=0, column=1, sticky="ew", pady=7)
+
+        ttk.Button(marco, text="Matricular", command=lambda: ttk.Label(marco, text=materia.get()).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=7)).grid(row=1, column=1, sticky="ew", pady=7)
+
+        pma_window.wait_visibility()
+        pma_window.focus_set()
+        pma_window.mainloop()
+
         materia_id = buscar_fila(hoja_materias, 1, nombre_materia)[0]
         datos_registro.append(materia_id)
 
         if not buscar_fila(hoja_estudiantes, 0, id_get):
-            messagebox.showinfo("Fallo de registro", "El estudiante no está registrado.")
+            messagebox.showinfo(
+                "Fallo de registro", "El estudiante no está registrado."
+            )
             return
 
         fecha_matricula = date.today().strftime("%Y-%m-%d")
@@ -358,7 +530,7 @@ def registrar_matricula():
         if total_creditos == 18:
             messagebox.showinfo(
                 "Fallo de registro",
-                "El estudiante tiene el máximo de créditos matriculados.\nNo se pueden matricular más materias."
+                "El estudiante tiene el máximo de créditos matriculados.\nNo se pueden matricular más materias.",
             )
             return
 
@@ -383,33 +555,25 @@ def registrar_matricula():
         if (total_creditos + int(creditos)) >= 18:
             messagebox.showinfo(
                 "Fallo de registro",
-                "La materia seleccionada excede el total de créditos permitidos."
+                "La materia seleccionada excede el total de créditos permitidos.",
             )
             return
         guardar_datos(hoja_matriculas, datos_registro)
 
     materias = []
+    estudiantes = []
 
     for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
         materias.append(str(fila[1]).strip())
 
-    rma_window = tk.Tk()
-    rma_window.title("Registrar Matrícula")
-    rma_window.minsize(400, 300)
+    for fila in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
+        estudiantes.append(str(fila[0]).strip())
 
-    ttk.Label(rma_window, text="Ingrese la identificación del estudiante:").pack(padx=5, pady=5)
-    id_estudiante = ttk.Entry(rma_window, width=30)
-    id_estudiante.pack(padx=5, pady=5)
-
-    # Esto ahorra tener que validar a mano si la materia existe
-    ttk.Label(rma_window, text="Seleccione la materia:").pack(padx=5, pady=5)
-    materia = ttk.Combobox(rma_window, width=30, state="readonly", values=materias)
-    materia.pack(padx=5, pady=5)
-
-    button(rma_window, "Registrar Matrícula", lambda: procesar_matricula([id_estudiante, materia]))
-
-    sv_ttk.use_dark_theme(rma_window)
-    rma_window.mainloop()
+    ventana_formulario(root, "Registrar Matrícula",
+        [
+            ("id_estudiante", "Identificación del estudiante:", estudiantes),
+            ("creditos", "Cantidad de créditos a matricular:"),
+        ], procesar_matricula, "Comenzar matrícula", "normal")
 
 
 def registrar_notas():
@@ -560,6 +724,7 @@ def menu_principal():
     etiqueta_logo.pack(pady=(25, 10))
 
     button(root, "Registrar facultad", registrar_facultad)
+    button(root, "Registrar carrera", registrar_carrera)
     button(root, "Registrar estudiante", registrar_estudiante)
     button(root, "Registrar materia", registrar_materia)
     button(root, "Matricular estudiante", registrar_matricula)
@@ -569,6 +734,70 @@ def menu_principal():
     sv_ttk.set_theme("dark")
 
     root.mainloop()
+
+
+def ventana_formulario(raiz, titulo, campos, al_guardar, button_text: str = "Guardar", state: str = "readonly"):
+    ventana = tk.Toplevel(raiz)
+    ventana.title(titulo)
+    ventana.resizable(False, False)
+    ventana.transient(raiz)
+    ventana.grab_set()
+
+    marco = ttk.Frame(ventana, padding=24)
+    marco.grid(sticky="nsew")
+    entradas = {}
+    for fila, campo in enumerate(campos):
+        clave, etiqueta = campo[:2]
+        ttk.Label(marco, text=etiqueta).grid(
+            row=fila, column=0, sticky="w", padx=(0, 16), pady=7
+        )
+        if len(campo) == 3:
+            entrada = ttk.Combobox(
+                marco,
+                width=33,
+                state=state,
+                values=campo[2],
+            )
+            if campo[2]:
+                entrada.current(0)
+        else:
+            entrada = ttk.Entry(marco, width=36)
+        entrada.grid(row=fila, column=1, sticky="ew", pady=7)
+        entradas[clave] = entrada
+
+    def guardar():
+        valores = {clave: entrada.get().strip() for clave, entrada in entradas.items()}
+        if any(not valor for valor in valores.values()):
+            messagebox.showwarning(
+                "Campos obligatorios",
+                "Complete todos los campos antes de guardar.",
+                parent=ventana,
+            )
+            return
+        try:
+            guardado = al_guardar(valores)
+        except OSError as error:
+            messagebox.showerror(
+                "Error al guardar",
+                f"No se pudo acceder al archivo de Excel.\n\nDetalle: {error}",
+                parent=ventana,
+            )
+            return
+        except ValueError as error:
+            messagebox.showerror("Error en el registro", str(error), parent=ventana)
+            return
+        if guardado:
+            ventana.destroy()
+    botones = ttk.Frame(marco)
+    ttk.Button(botones, text="Cancelar", command=ventana.destroy).pack(
+        side="right", padx=(8, 0)
+    )
+    ttk.Button(botones, text=button_text, command=guardar, style="Accent.TButton").pack(side="right")
+    botones.grid(row=len(campos), column=0, columnspan=2, sticky="e", pady=(18, 0))
+    next(iter(entradas.values())).focus_set()
+    ventana.wait_visibility() 
+    ventana.focus_set()
+    ventana.mainloop()
 
 
 if __name__ == "__main__":

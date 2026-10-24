@@ -7,7 +7,7 @@ consola = Console()
 
 
 def button(
-    root: tk.Tk,
+    root: tk.Tk | tk.Toplevel,
     text: str,
     command,
     ancho: int = 30,
