@@ -352,7 +352,7 @@ def registrar_materia():
         # Guardar en Excel
         datos = [
             valores["codigo"],
-            valores["nombre"],
+            valores["nombre"].lower(),
             valores["creditos"],
             id_facultad,
         ]
@@ -395,24 +395,6 @@ def generar_id_matricula(hoja):
     return f"{nuevo_contador:02d}{fecha_hoy}"  # Formato: 01 + ddmmyy
 
 
-def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
-    """
-    Obtener los créditos totales que el estudiante ha matriculado en
-    el periodo actual, la función retorna un entero, esto permitirá que más
-    adelante se revise si el estudiante puede matricular más materias o
-    excede los créditos máximos, también si un estudiante tiene menos del
-    mínimo permitido, negándose a generar la factura hasta que cumpla el rango.
-    """
-    total_creditos: int = 0
-    for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
-        cedula_fila = str(fila[1]).strip()
-        periodo_fila = str(fila[4]).strip()
-        if cedula_fila == cedula and periodo_fila == periodo:
-            total_creditos += int(str(fila[3]).strip())
-
-    return total_creditos
-
-
 def registrar_matricula():
     """
     Registro de matrículas con menú de añadir, registro de golpe, usando únicamente los créditos que el estudiante
@@ -428,7 +410,13 @@ def registrar_matricula():
     hoja_carreras = libro["Carreras"]
 
     def procesar_matricula(datos: dict):
+        creditos_prematricula: int = 0
+        prematriculados: list[str] = []
+        row_materia: int = 3
         def validar_materia():
+            nonlocal creditos_prematricula
+            nonlocal prematriculados
+            nonlocal row_materia
             nombre_materia = materia.get().strip()
             info_materia = buscar_fila(hoja_materias, 1, nombre_materia)
             if creditos_prematricula + int(info_materia[2]) > 12:
@@ -438,9 +426,11 @@ def registrar_matricula():
                 )
                 return
             creditos_prematricula += int(info_materia[2])
+            prematriculados.append(nombre_materia)
             ttk.Label(marco, text=f"{nombre_materia}    {info_materia[2]} créditos").grid(
-                row=2, column=0, sticky="w", padx=(0, 16), pady=7
+                row=row_materia, column=0, sticky="w", padx=(0, 16), pady=7
             )
+            row_materia += 1
         datos_registro = [generar_id_matricula(hoja_matriculas)]
 
         id_get = datos["id_estudiante"]
@@ -464,22 +454,20 @@ def registrar_matricula():
         marco = ttk.Frame(pma_window, padding=24)
         marco.grid(sticky="nsew")
 
-        creditos_prematricula = 0
-
         carrera_estudiante = buscar_fila(hoja_estudiantes, 0, id_get)[5]
         facultad_estudiante = buscar_fila(hoja_carreras, 0, carrera_estudiante)[0]
 
         materias_facultad = []
 
         for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-            if str(fila[3]).strip() == facultad_estudiante:
+            if str(fila[3]).strip() == str(facultad_estudiante):
                 materias_facultad.append(str(fila[1]).strip())
 
         # añadir también materias generales como humanidades e inglés
         try:
             id_humanidades = buscar_fila(hoja_facultades, 1, "humanidades")[0]
             for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-                if str(fila[3]).strip() == id_humanidades:
+                if str(fila[3]).strip() == str(id_humanidades):
                     materias_facultad.append(str(fila[1]).strip())
         except TypeError:
             pass
@@ -487,7 +475,7 @@ def registrar_matricula():
         try:
             id_ingles = buscar_fila(hoja_facultades, 1, "ingles")[0]
             for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-                if str(fila[3]).strip() == id_ingles:
+                if str(fila[3]).strip() == str(id_ingles):
                     materias_facultad.append(str(fila[1]).strip())
         except TypeError:
             pass
@@ -503,7 +491,16 @@ def registrar_matricula():
         )
         materia.grid(row=0, column=1, sticky="ew", pady=7)
 
-        ttk.Button(marco, text="Matricular", command=validar_materia).grid(row=1, column=1, sticky="ew", pady=7)
+        botones = ttk.Frame(marco)
+        ttk.Button(botones, text="Cancelar", command=pma_window.destroy).pack(
+            side="right", padx=(8, 0)
+        )
+        ttk.Button(
+            botones, text="Matricular", command=validar_materia, style="Accent.TButton"
+        ).pack(side="right")
+        botones.grid(row=1, column=0, columnspan=2, sticky="e", pady=(18, 0))
+
+        ttk.Button(marco, text="Registrar créditos", command=print, style="Accent.TButton").grid(row=2, column=1, sticky="ew", pady=7)
 
         pma_window.wait_visibility()
         pma_window.focus_set()
@@ -523,17 +520,6 @@ def registrar_matricula():
             "-"
         )  # Convertir str a list usando '-' como separador
         periodo = fecha_list[0]  # Año
-
-        total_creditos = obtener_total_creditos_estudiante(
-            hoja_matriculas, id_get, periodo
-        )
-
-        if total_creditos == 18:
-            messagebox.showinfo(
-                "Fallo de registro",
-                "El estudiante tiene el máximo de créditos matriculados.\nNo se pueden matricular más materias.",
-            )
-            return
 
         if not buscar_fila(hoja_materias, 1, nombre_materia):
             messagebox.showinfo("Fallo de registro", "La materia no está registrada.")
