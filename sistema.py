@@ -151,9 +151,8 @@ def buscar_fila(hoja, columna, valor):
 
 def siguiente_id(hoja):
     identificadores = [
-        fila[0]
+        int(fila[0])
         for fila in hoja.iter_rows(min_row=2, values_only=True)
-        if isinstance(fila[0], int)
     ]
     return max(identificadores, default=0) + 1
 
