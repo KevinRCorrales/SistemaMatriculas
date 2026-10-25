@@ -59,7 +59,7 @@ def crear_archivo_excel():
                 "Apellidos",
                 "Correo",
                 "Telefono",
-                "ID_Carrera",  # llave foranea
+                "ID_Carrera",  # llave foránea
             ],
             "Carreras": ["Id carrera", "Nombre", "ID_Facultad"],
             "Matriculas": [
@@ -94,7 +94,7 @@ def crear_archivo_excel():
             ):  # Establecer los encabezados en la primera fila de cada hoja
                 celda = hoja_actual.cell(
                     row=1, column=columnas, value=encabezado
-                )  # Esrablecer el valor de la celda en la primera fila y columna correspondiente al encabezado
+                )  # Establecer el valor de la celda en la primera fila y columna correspondiente al encabezado
                 celda.font = Font(
                     bold=True, color="FFFFFF"
                 )  # Establecer el estilo de fuente en negrita y color blanco para los encabezados
@@ -252,7 +252,6 @@ def validar(hoja, datos, columna, id_get, tipo="estudiante"):
 
 def registrar_estudiante():
     libro = load_workbook(ruta_archivo)
-    hoja_facultades = libro["Facultades"]
     hoja_carreras = libro["Carreras"]
     
     # Obtener lista de facultades para el Combobox
@@ -283,8 +282,8 @@ def registrar_estudiante():
             return False
 
         # Buscar el ID de la facultad seleccionada
-        fila_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])
-        id_facultad = fila_facultad[0] if fila_facultad else ""
+        fila_carrera = buscar_fila(hoja_carreras, 1, valores["carrera"])
+        id_carrera = fila_carrera[0] if fila_carrera else ""
 
         # Guardar en Excel
         datos = [
@@ -293,7 +292,7 @@ def registrar_estudiante():
             valores["apellido"],
             valores["correo"],
             valores["telefono"],
-            id_facultad,
+            id_carrera,
         ]
         
         hoja_estudiantes.append(datos)
@@ -416,8 +415,8 @@ def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
 
 def registrar_matricula():
     """
-    Registro de matrículas con menú de añadir, registro de golpe, usando unicamente los créditos que el estudiante
-    va a inscribir, se debe matricular entre 2 y 12 créditos, si el estudiantes selecciona 10 créditos y lleva
+    Registro de matrículas con menú de añadir, registro de golpe, usando únicamente los créditos que el estudiante
+    va a inscribir, se debe matricular entre 2 y 12 créditos, si el estudiante selecciona 10 créditos y lleva
     8 matriculados, y selecciona una materia de 3, se le denegará, solo puede matricular esos 8 créditos o
     matricular una materia de 2 créditos. Esta función requiere ventana diferente a formulario sencillo.
     """
@@ -426,6 +425,7 @@ def registrar_matricula():
     hoja_estudiantes = libro["Estudiantes"]
     hoja_materias = libro["Materias"]
     hoja_facultades = libro["Facultades"]
+    hoja_carreras = libro["Carreras"]
 
     def procesar_matricula(datos: dict):
         def validar_materia():
@@ -437,6 +437,7 @@ def registrar_matricula():
                     "La cantidad de créditos a matricular excede el máximo permitido (12).",
                 )
                 return
+            creditos_prematricula += int(info_materia[2])
             ttk.Label(marco, text=f"{nombre_materia}    {info_materia[2]} créditos").grid(
                 row=2, column=0, sticky="w", padx=(0, 16), pady=7
             )
@@ -465,7 +466,8 @@ def registrar_matricula():
 
         creditos_prematricula = 0
 
-        facultad_estudiante = buscar_fila(hoja_estudiantes, 0, id_get)[6]
+        carrera_estudiante = buscar_fila(hoja_estudiantes, 0, id_get)[5]
+        facultad_estudiante = buscar_fila(hoja_carreras, 0, carrera_estudiante)[0]
 
         materias_facultad = []
 
@@ -473,7 +475,7 @@ def registrar_matricula():
             if str(fila[3]).strip() == facultad_estudiante:
                 materias_facultad.append(str(fila[1]).strip())
 
-        # añadir tambien materias generales como humanidades e inglés
+        # añadir también materias generales como humanidades e inglés
         try:
             id_humanidades = buscar_fila(hoja_facultades, 1, "humanidades")[0]
             for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
@@ -501,7 +503,7 @@ def registrar_matricula():
         )
         materia.grid(row=0, column=1, sticky="ew", pady=7)
 
-        ttk.Button(marco, text="Matricular", command=lambda: ttk.Label(marco, text=materia.get()).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=7)).grid(row=1, column=1, sticky="ew", pady=7)
+        ttk.Button(marco, text="Matricular", command=validar_materia).grid(row=1, column=1, sticky="ew", pady=7)
 
         pma_window.wait_visibility()
         pma_window.focus_set()
