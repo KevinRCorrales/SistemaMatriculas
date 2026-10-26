@@ -1,4 +1,4 @@
 openpyxl
-reportlab
+fpdf2
 rich
 sv_ttk

@@ -4,29 +4,13 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 import sv_ttk
+from fpdf import FPDF
+from fpdf.fonts import FontFace
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from reportlab.lib import colors  # Colores predefinidos para usar en el PDF.
-from reportlab.lib.enums import (
-    TA_CENTER,  # Constantes para alinear texto en el PDF (por ejemplo, centrar texto).
-)
-from reportlab.lib.pagesizes import (
-    letter,  # Tamaño de página predefinido para el PDF (carta).
-)
-from reportlab.lib.styles import (  # Crear estilos de párrafo y obtener estilos de muestra para el PDF.
-    getSampleStyleSheet,
-)
-from reportlab.lib.units import cm  # Unidades de medida para el PDF (centímetros).
-from reportlab.platypus import (  # Elementos para crear el PDF: párrafos, documentos, espacios y tablas.
-    Image,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from rich.console import Console
 
-from utils import button, consola
+estilo_encabezado = FontFace(emphasis="BOLD")
 
 root = tk.Tk()
 root.title("Sistema de Matrículas")
@@ -37,6 +21,21 @@ ruta_logo = Path(__file__).with_name("image.png")
 imagen_tk = tk.PhotoImage(file=ruta_logo).subsample(3, 3)
 
 VALOR_CREDITO: int = 70_000
+
+consola = Console()
+
+
+def button(
+    root: tk.Tk | tk.Toplevel,
+    text: str,
+    command,
+    ancho: int = 30,
+    estilo: str = "Accent.TButton",
+    padx=5,
+    pady=5,
+):
+    boton = ttk.Button(root, text=text, command=command, width=ancho, style=estilo)
+    boton.pack(padx=padx, pady=pady)
 
 
 def crear_archivo_excel():
@@ -151,8 +150,7 @@ def buscar_fila(hoja, columna, valor):
 
 def siguiente_id(hoja):
     identificadores = [
-        int(fila[0])
-        for fila in hoja.iter_rows(min_row=2, values_only=True)
+        int(fila[0]) for fila in hoja.iter_rows(min_row=2, values_only=True)
     ]
     return max(identificadores, default=0) + 1
 
@@ -169,7 +167,7 @@ def registrar_facultad():
             if fila and len(fila) > 1 and fila[1]:
                 if str(fila[1]).strip().lower() == nombre_facultad:
                     messagebox.showerror(
-                        title="Error", message="La facultad ya existe." 
+                        title="Error", message="La facultad ya existe."
                     )
                     return False
                 if fila[0] is not None:
@@ -177,15 +175,13 @@ def registrar_facultad():
                         max_id = max(max_id, int(fila[0]))
                     except ValueError:
                         pass
-        
+
         nuevo_id = str(max_id + 1)
         hoja_facultades.append([nuevo_id, nombre_facultad])
         libro.save(ruta_archivo)
-        messagebox.showinfo(
-            title="Exito", message="Facultad registrada exitosamente."
-        )
+        messagebox.showinfo(title="Exito", message="Facultad registrada exitosamente.")
         return True
-        
+
     ventana_formulario(
         root,
         "Registrar Facultad",
@@ -201,19 +197,20 @@ def registrar_carrera():
 
     def guardar(valores):
         for carrera in hoja_carreras.iter_rows(min_row=2, values_only=True):
-            if str(carrera[1]).strip().lower() == valores["nombre_carrera"].strip().lower():
-                messagebox.showerror(
-                    title="Error", message="La carrera ya existe."
-                )
+            if (
+                str(carrera[1]).strip().lower()
+                == valores["nombre_carrera"].strip().lower()
+            ):
+                messagebox.showerror(title="Error", message="La carrera ya existe.")
                 return False
         id_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])[0]
-        hoja_carreras.append([siguiente_id(hoja_carreras), valores["nombre_carrera"], id_facultad])
-        libro.save(ruta_archivo)
-        messagebox.showinfo(
-            title="Exito", message="Carrera registrada exitosamente."
+        hoja_carreras.append(
+            [siguiente_id(hoja_carreras), valores["nombre_carrera"], id_facultad]
         )
+        libro.save(ruta_archivo)
+        messagebox.showinfo(title="Exito", message="Carrera registrada exitosamente.")
         return True
-        
+
     facultades = []
 
     for fila in hoja_facultades.iter_rows(min_row=2, values_only=True):
@@ -222,7 +219,10 @@ def registrar_carrera():
     ventana_formulario(
         root,
         "Registrar Carrera",
-        [("nombre_carrera", "Nombre de la carrera:"), ("facultad", "Facultad:", facultades)],
+        [
+            ("nombre_carrera", "Nombre de la carrera:"),
+            ("facultad", "Facultad:", facultades),
+        ],
         guardar,
     )
 
@@ -253,7 +253,7 @@ def validar(hoja, datos, columna, id_get, tipo="estudiante"):
 def registrar_estudiante():
     libro = load_workbook(ruta_archivo)
     hoja_carreras = libro["Carreras"]
-    
+
     # Obtener lista de facultades para el Combobox
     carreras = [
         str(fila[1]).strip()
@@ -271,7 +271,7 @@ def registrar_estudiante():
 
     def guardar(valores):
         hoja_estudiantes = libro["Estudiantes"]
-        
+
         # Validar si la cédula ya existe
         if buscar_fila(hoja_estudiantes, 0, valores["cedula"]):
             messagebox.showerror(
@@ -294,10 +294,12 @@ def registrar_estudiante():
             valores["telefono"],
             id_carrera,
         ]
-        
+
         hoja_estudiantes.append(datos)
         libro.save(ruta_archivo)
-        messagebox.showinfo("Éxito", "Estudiante registrado correctamente.", parent=root)
+        messagebox.showinfo(
+            "Éxito", "Estudiante registrado correctamente.", parent=root
+        )
         return True
 
     ventana_formulario(
@@ -324,7 +326,7 @@ def registrar_materia():
         for fila in hoja_facultades.iter_rows(min_row=2, values_only=True)
         if fila and fila[1]
     ]
-    
+
     if not facultades:
         messagebox.showwarning(
             "Facultades requeridas",
@@ -332,10 +334,10 @@ def registrar_materia():
             parent=root,
         )
         return
-    
+
     def guardar(valores):
         hoja_materias = libro["Materias"]
-        
+
         # Validar si el código de la materia ya existe
         if buscar_fila(hoja_materias, 0, valores["codigo"]):
             messagebox.showerror(
@@ -356,7 +358,7 @@ def registrar_materia():
             valores["creditos"],
             id_facultad,
         ]
-        
+
         hoja_materias.append(datos)
         libro.save(ruta_archivo)
         messagebox.showinfo("Éxito", "Materia registrada correctamente.", parent=root)
@@ -370,10 +372,15 @@ def registrar_materia():
             ("codigo", "Código de la materia:"),
             ("nombre", "Nombre de la materia:"),
             ("creditos", "Créditos de la materia:"),
-            ("facultad", "Facultad:", facultades), #Muestra la lista de facultades registradas en un Combobox para seleccionar la facultad correspondiente a la materia
+            (
+                "facultad",
+                "Facultad:",
+                facultades,
+            ),  # Muestra la lista de facultades registradas en un Combobox para seleccionar la facultad correspondiente a la materia
         ],
         guardar,
     )
+
 
 def generar_id_matricula(hoja):
     fecha_hoy = date.today().strftime("%d%m%y")
@@ -395,6 +402,24 @@ def generar_id_matricula(hoja):
     return f"{nuevo_contador:02d}{fecha_hoy}"  # Formato: 01 + ddmmyy
 
 
+def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
+    """
+    Obtener los créditos totales que el estudiante ha matriculado en
+    el periodo actual, la función retorna un entero, esto permitirá que más
+    adelante se revise si el estudiante puede matricular más materias o
+    excede los créditos máximos, también si un estudiante tiene menos del
+    mínimo permitido, negándose a generar la factura hasta que cumpla el rango.
+    """
+    total_creditos: int = 0
+    for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
+        cedula_fila = str(fila[1]).strip()
+        periodo_fila = str(fila[3]).strip()
+        if cedula_fila == cedula and periodo_fila == periodo:
+            total_creditos += int(str(fila[4]).strip())
+
+    return total_creditos
+
+
 def registrar_matricula():
     """
     Registro de matrículas con menú de añadir, registro de golpe, usando únicamente los créditos que el estudiante
@@ -413,6 +438,7 @@ def registrar_matricula():
         creditos_prematricula: int = 0
         prematriculados: list[str] = []
         row_materia: int = 3
+
         def validar_materia():
             nonlocal creditos_prematricula
             nonlocal prematriculados
@@ -427,10 +453,49 @@ def registrar_matricula():
                 return
             creditos_prematricula += int(info_materia[2])
             prematriculados.append(nombre_materia)
-            ttk.Label(marco, text=f"{nombre_materia}    {info_materia[2]} créditos").grid(
-                row=row_materia, column=0, sticky="w", padx=(0, 16), pady=7
-            )
+            ttk.Label(
+                marco, text=f"{nombre_materia}    {info_materia[2]} créditos"
+            ).grid(row=row_materia, column=0, sticky="w", padx=(0, 16), pady=7)
             row_materia += 1
+
+        def registrar_creditos():
+            nonlocal prematriculados
+            if not prematriculados:
+                messagebox.showinfo(
+                    "Fallo de registro",
+                    "No se han seleccionado materias para matricular.",
+                )
+                return
+            fecha_matricula = date.today().strftime("%Y-%m-%d")
+            fecha_list = fecha_matricula.split(
+                "-"
+            )  # Convertir str a list usando '-' como separador
+            periodo = fecha_list[0]  # Año
+
+            # Si el mes es el mes 6 o anterior, usamos el periodo 1 (primer semestre)
+            # De lo contrario usamos el periodo 2 (Segundo semestre)
+            if int(fecha_list[1]) <= 6:
+                periodo = f"{periodo}-1"
+            else:
+                periodo = f"{periodo}-2"
+
+            for nombre_materia in prematriculados:
+                datos_registro = []
+                materia_info = buscar_fila(hoja_materias, 1, nombre_materia)
+                datos_registro.append(generar_id_matricula(hoja_matriculas))
+                datos_registro.append(datos["id_estudiante"])
+                datos_registro.append(materia_info[0])
+                datos_registro.append(periodo)
+                datos_registro.append(materia_info[2])
+                datos_registro.append(fecha_matricula)
+                hoja_matriculas.append(datos_registro)
+            libro.save(ruta_archivo)
+            messagebox.showinfo(
+                "Éxito",
+                f"Se han registrado {len(prematriculados)} materias para el estudiante {datos['id_estudiante']}.",
+            )
+            pma_window.destroy()
+
         datos_registro = [generar_id_matricula(hoja_matriculas)]
 
         id_get = datos["id_estudiante"]
@@ -447,7 +512,7 @@ def registrar_matricula():
 
         pma_window = tk.Toplevel(root)
         pma_window.title("Seleccionar Materias")
-        pma_window.resizable(False, False) 
+        pma_window.resizable(False, False)
         pma_window.transient(root)
         pma_window.grab_set()
 
@@ -500,52 +565,16 @@ def registrar_matricula():
         ).pack(side="right")
         botones.grid(row=1, column=0, columnspan=2, sticky="e", pady=(18, 0))
 
-        ttk.Button(marco, text="Registrar créditos", command=print, style="Accent.TButton").grid(row=2, column=1, sticky="ew", pady=7)
+        ttk.Button(
+            marco,
+            text="Registrar créditos",
+            command=registrar_creditos,
+            style="Accent.TButton",
+        ).grid(row=2, column=1, sticky="ew", pady=7)
 
         pma_window.wait_visibility()
         pma_window.focus_set()
         pma_window.mainloop()
-
-        materia_id = buscar_fila(hoja_materias, 1, nombre_materia)[0]
-        datos_registro.append(materia_id)
-
-        if not buscar_fila(hoja_estudiantes, 0, id_get):
-            messagebox.showinfo(
-                "Fallo de registro", "El estudiante no está registrado."
-            )
-            return
-
-        fecha_matricula = date.today().strftime("%Y-%m-%d")
-        fecha_list = fecha_matricula.split(
-            "-"
-        )  # Convertir str a list usando '-' como separador
-        periodo = fecha_list[0]  # Año
-
-        if not buscar_fila(hoja_materias, 1, nombre_materia):
-            messagebox.showinfo("Fallo de registro", "La materia no está registrada.")
-            return
-
-        # Si el mes es el mes 6 o anterior, usamos el periodo 1 (primer semestre)
-        # De lo contrario usamos el periodo 2 (Segundo semestre)
-        if int(fecha_list[1]) <= 6:
-            periodo = f"{periodo}-1"
-        else:
-            periodo = f"{periodo}-2"
-
-        datos_registro.append(periodo)
-
-        creditos = buscar_fila(hoja_materias, 0, materia_id)[2]
-
-        datos_registro.append(creditos)
-        datos_registro.append(fecha_matricula)
-
-        if (total_creditos + int(creditos)) >= 18:
-            messagebox.showinfo(
-                "Fallo de registro",
-                "La materia seleccionada excede el total de créditos permitidos.",
-            )
-            return
-        guardar_datos(hoja_matriculas, datos_registro)
 
     materias = []
     estudiantes = []
@@ -556,40 +585,112 @@ def registrar_matricula():
     for fila in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
         estudiantes.append(str(fila[0]).strip())
 
-    ventana_formulario(root, "Registrar Matrícula",
+    ventana_formulario(
+        root,
+        "Registrar Matrícula",
         [
             ("id_estudiante", "Identificación del estudiante:", estudiantes),
             ("creditos", "Cantidad de créditos a matricular:"),
-        ], procesar_matricula, "Comenzar matrícula", "normal")
+        ],
+        procesar_matricula,
+        "Comenzar matrícula",
+        "normal",
+    )
 
 
 def registrar_notas():
-    rn_window = tk.Tk()
-    rn_window.title("Registrar Notas")
-    rn_window.minsize(400, 500)
+    libro = load_workbook(ruta_archivo)
+    hoja_notas = libro["Notas"]
+    hoja_materias = libro["Materias"]
+    hoja_estudiantes = libro["Estudiantes"]
+    hoja_matriculas = libro["Matriculas"]
 
-    sv_ttk.use_dark_theme(rn_window)
-    rn_window.mainloop()
+    def guardar(datos):
+        encontrado: bool = False
+        for matricula in hoja_matriculas.iter_rows(min_row=2, values_only=True):
+            if (
+                str(matricula[1]).strip() == datos["id_estudiante"]
+                and str(matricula[2]).strip() == datos["id_materia"]
+            ):
+                id_matricula = matricula[0]
+                encontrado = True
+                break
+
+        if not encontrado:
+            messagebox.showerror(
+                "Error", "El estudiante no está matriculado en la materia seleccionada."
+            )
+            return False
+
+        promedio = (
+            float(datos["nota1"]) + float(datos["nota2"]) + float(datos["nota3"])
+        ) / 3
+
+        hoja_notas.append(
+            [
+                siguiente_id(hoja_notas),
+                id_matricula,
+                str(datos["id_materia"]).strip(),
+                str(datos["id_estudiante"]).strip(),
+                datos["nota1"],
+                datos["nota2"],
+                datos["nota3"],
+                str(round(promedio, 2)),
+            ]
+        )
+        libro.save(ruta_archivo)
+
+        if promedio >= 3.0:
+            messagebox.showinfo(
+                "Registro exitoso",
+                f"Notas registradas exitosamente. El estudiante aprobó la materia con un promedio de {round(promedio, 2)}.",
+            )
+        else:
+            messagebox.showwarning(
+                "Registro exitoso",
+                f"Notas registradas exitosamente. El estudiante reprobó la materia con un promedio de {round(promedio, 2)}.",
+            )
+
+    cedulas = []
+    for fila in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
+        cedulas.append(str(fila[0]).strip())
+
+    materias = []
+    for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
+        materias.append(str(fila[1]).strip())
+    ventana_formulario(
+        root,
+        "Registrar Notas",
+        [
+            ("id_estudiante", "Cédula/TI del estudiante:", cedulas),
+            ("id_materia", "Nombre de la matrícula:", materias),
+            ("nota1", "Nota 1:"),
+            ("nota2", "Nota 2:"),
+            ("nota3", "Nota 3:"),
+        ],
+        guardar,
+    )
 
 
-def generar_factura(id_estudiante, periodo):
-    materia = load_workbook(ruta_archivo)
-    hoja_matriculas = materia["Matriculas"]
-    hoja_estudiantes = materia["Estudiantes"]
-    hoja_materias = materia["Materias"]
+def generar_factura(datos: dict):
+    id_estudiante = datos["id_estudiante"]
+    periodo = datos["periodo"]
+
+    libro = load_workbook(ruta_archivo)
+    hoja_matriculas = libro["Matriculas"]
+    hoja_estudiantes = libro["Estudiantes"]
+    hoja_materias = libro["Materias"]
 
     # Obtengo la información del estudiante
     fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
-    if not fila_estudiante:
-        consola.log("El estudiante no está registrado.")
-        return
 
     total_creditos = obtener_total_creditos_estudiante(
         hoja_matriculas, id_estudiante, periodo
     )
     if total_creditos < 2:
-        consola.log(
-            f"No se puede generar la factura: El estudiante solo tiene {total_creditos} crédito(s) matriculado(s). Se requiere un mínimo de 2 créditos."
+        messagebox.showerror(
+            "Error",
+            f"No se puede generar la factura: El estudiante solo tiene {total_creditos} crédito(s) matriculado(s). Se requiere un mínimo de 2 créditos.",
         )
         return
 
@@ -617,11 +718,11 @@ def generar_factura(id_estudiante, periodo):
 
     # Obtener todas las matriculas y listarlas en la factura
     for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
-        if str(fila[1]).strip() == id_estudiante and str(fila[4]).strip() == periodo:
+        if str(fila[1]).strip() == id_estudiante and str(fila[3]).strip() == periodo:
             cod_materia = str(fila[2]).strip()
             nombre_mat = dict_materias[cod_materia]
             matriculas_estudiante.append(
-                [str(fila[0]).strip(), cod_materia, nombre_mat, str(fila[3]).strip()]
+                [str(fila[0]).strip(), cod_materia, nombre_mat, str(fila[4]).strip()]
             )
 
     fecha_actual = date.today().strftime("%Y-%m-%d")
@@ -631,77 +732,105 @@ def generar_factura(id_estudiante, periodo):
 
     archivo_pdf = carpeta_facturas / f"Factura_{id_estudiante}.pdf"
 
-    documento = SimpleDocTemplate(
-        str(archivo_pdf),
-        pagesize=letter,
-        rightMargin=2 * cm,
-        leftMargin=2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
+    pdf = FPDF(orientation="P", unit="mm", format="Letter")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Logo de la universidad
+    if ruta_logo.exists():
+        pdf.image(str(ruta_logo), x=88, y=12, w=40)
+        pdf.ln(45)  # Salto de línea después del logo
+    else:
+        pdf.ln(20)  # Salto de línea si no hay logo
+
+    # Titulo
+    pdf.set_font("helvetica", "B", 18)
+    pdf.cell(0, 10, "Factura de Matrícula", new_x="LMARGIN", new_y="NEXT", align="C")
+
+    pdf.set_font("helvetica", "", 10)
+    pdf.cell(
+        0,
+        6,
+        f"Fecha de emisión: {fecha_actual}",
+        new_x="LMARGIN",
+        new_y="NEXT",
+        align="C",
+    )
+    pdf.cell(
+        0, 6, f"Periodo academico: {periodo}", new_x="LMARGIN", new_y="NEXT", align="C"
+    )
+    pdf.ln(6)
+
+    # Info del estudiante
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(
+        0, 8, "Información del estudiante:", new_x="LMARGIN", new_y="NEXT", align="L"
+    )
+    pdf.set_font("helvetica", "", 10)
+
+    with pdf.table(text_align="CENTER") as table:
+        for i, fila in enumerate(info_estudiante):
+            row = table.row()
+            for celda in fila:
+                if i == 0:
+                    row.cell(str(celda), style=estilo_encabezado)
+                else:
+                    row.cell(str(celda))
+    pdf.ln(6)
+
+    # Detalle de la matrícula del estudiante
+    with pdf.table(text_align="LEFT") as table:
+        for i, fila in enumerate(matriculas_estudiante):
+            row = table.row()
+            for celda in fila:
+                if i == 0:
+                    row.cell(str(celda), style=estilo_encabezado)
+                else:
+                    row.cell(str(celda))
+
+    pdf.ln(6)
+
+    # Resumen financiero
+    total_pagar = total_creditos * VALOR_CREDITO
+    total_fmt = f"${total_pagar:,.0f}".replace(
+        ",", "."
+    )  # Formatear con separador de miles y decimales
+    valor_credito_fmt = f"${VALOR_CREDITO:,.0f}".replace(
+        ",", "."
+    )  # Formatear con separador de miles y decimales
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(
+        0,
+        8,
+        f"Total a pagar: {total_creditos} crédito(s) x {valor_credito_fmt} = {total_fmt} COP",
+        new_x="LMARGIN",
+        new_y="NEXT",
+        align="L",
     )
 
-    estilos = getSampleStyleSheet()
-    estilo_titulo = estilos["Title"]
-    estilo_titulo.alignment = TA_CENTER
-    estilo_texto = estilos["BodyText"]
-
-    contenido = []
-    contenido.append(Image(ruta_logo, width=4 * cm, height=4 * cm))
-    contenido.append(Spacer(1, 12))
-    contenido.append(Paragraph("Factura de Matrículas", estilo_titulo))
-    contenido.append(Paragraph(f"Fecha: {fecha_actual}", estilo_texto))
-    contenido.append(Spacer(1, 12))
-
-    tabla = Table(matriculas_estudiante, colWidths=[3.5 * cm, 3 * cm, 6 * cm, 2.5 * cm])
-    tabla.setStyle(
-        TableStyle(
-            [
-                # Encabezado: todas las columnas
-                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 14),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                # Filas de datos: todas las columnas
-                ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                # Tabla completa
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ]
-        )
+    pdf.output(str(archivo_pdf))
+    messagebox.showinfo(
+        "Factura generada", f"Factura generada exitosamente: {archivo_pdf}"
     )
-    contenido.append(tabla)
-    contenido.append(Spacer(1, 12))
-    tabla_estudiante = Table(info_estudiante, colWidths=[5 * cm, 10 * cm])
-    tabla_estudiante.setStyle(
-        TableStyle(
-            [
-                # Encabezado: todas las columnas
-                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 14),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                # Filas de datos: todas las columnas
-                ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                # Tabla completa
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ]
-        )
-    )
-    contenido.append(tabla_estudiante)
+    return True
 
-    contenido.append(Spacer(1, 12))
-    contenido.append(
-        Paragraph(
-            f"Total a pagar: {total_creditos}x{VALOR_CREDITO} = ${total_creditos * VALOR_CREDITO}",
-            estilo_texto,
-        )
-    )
 
-    documento.build(contenido)
-    consola.log(f"Factura generada exitosamente: {archivo_pdf}")
+def factura_form():
+    libro = load_workbook(ruta_archivo)
+    hoja_estudiantes = libro["Estudiantes"]
+    cedulas = []
+    for estudiante in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
+        cedulas.append(str(estudiante[0]).strip())
+    ventana_formulario(
+        root,
+        "Generar Factura",
+        [
+            ("id_estudiante", "Cédula/TI del estudiante:", cedulas),
+            ("periodo", "Periodo académico (ej: 2024-1):"),
+        ],
+        generar_factura,
+        "Generar",
+    )
 
 
 def menu_principal():
@@ -716,14 +845,21 @@ def menu_principal():
     button(root, "Registrar materia", registrar_materia)
     button(root, "Matricular estudiante", registrar_matricula)
     button(root, "Registrar notas", registrar_notas)
-    button(root, "Generar recibo de matrícula", generar_factura)
+    button(root, "Generar recibo de matrícula", factura_form)
 
     sv_ttk.set_theme("dark")
 
     root.mainloop()
 
 
-def ventana_formulario(raiz, titulo, campos, al_guardar, button_text: str = "Guardar", state: str = "readonly"):
+def ventana_formulario(
+    raiz,
+    titulo,
+    campos,
+    al_guardar,
+    button_text: str = "Guardar",
+    state: str = "readonly",
+):
     ventana = tk.Toplevel(raiz)
     ventana.title(titulo)
     ventana.resizable(False, False)
@@ -775,14 +911,17 @@ def ventana_formulario(raiz, titulo, campos, al_guardar, button_text: str = "Gua
             return
         if guardado:
             ventana.destroy()
+
     botones = ttk.Frame(marco)
     ttk.Button(botones, text="Cancelar", command=ventana.destroy).pack(
         side="right", padx=(8, 0)
     )
-    ttk.Button(botones, text=button_text, command=guardar, style="Accent.TButton").pack(side="right")
+    ttk.Button(botones, text=button_text, command=guardar, style="Accent.TButton").pack(
+        side="right"
+    )
     botones.grid(row=len(campos), column=0, columnspan=2, sticky="e", pady=(18, 0))
     next(iter(entradas.values())).focus_set()
-    ventana.wait_visibility() 
+    ventana.wait_visibility()
     ventana.focus_set()
     ventana.mainloop()
 
