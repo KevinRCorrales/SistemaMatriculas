@@ -294,23 +294,30 @@ def registrar_matricula():
         prematriculados: list[str] = []
         row_materia: int = 3
 
-        def validar_materia():
+        def validar_materia(creditos_seleccionados):
             nonlocal creditos_prematricula
             nonlocal prematriculados
             nonlocal row_materia
             nombre_materia = materia.get().strip()
             info_materia = buscar_fila(hoja_materias, 1, nombre_materia)
-            if creditos_prematricula + int(info_materia[2]) > 12:
+            if creditos_prematricula + int(info_materia[2]) > creditos_seleccionados:
                 messagebox.showinfo(
                     "Fallo de registro",
-                    "La cantidad de créditos a matricular excede el máximo permitido (12).",
+                    "La cantidad de créditos a matricular excede los seleccionados.",
                 )
                 return
             creditos_prematricula += int(info_materia[2])
             prematriculados.append(nombre_materia)
             ttk.Label(
-                marco, text=f"{nombre_materia}    {info_materia[2]} créditos"
+                marco, text=nombre_materia
             ).grid(row=row_materia, column=0, sticky="w", padx=(0, 16), pady=7)
+            ttk.Label(
+                marco, text=f"{info_materia[2]} créditos"
+            ).grid(row=row_materia, column=1, sticky="ew", padx=(0, 16), pady=7)
+            ttk.Label(
+                marco,
+                text=f"Total créditos matriculados: {creditos_prematricula}/{total_creditos}",
+            ).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=7)
             row_materia += 1
 
         def registrar_creditos():
@@ -411,12 +418,15 @@ def registrar_matricula():
         )
         materia.grid(row=0, column=1, sticky="ew", pady=7)
 
+        ttk.Label(marco, text=f"Total créditos matriculados: {creditos_prematricula}/{total_creditos}").grid(
+            row=1, column=0, sticky="w", padx=(0, 16), pady=7
+        )
         botones = ttk.Frame(marco)
         ttk.Button(botones, text="Cancelar", command=pma_window.destroy).pack(
             side="right", padx=(8, 0)
         )
         ttk.Button(
-            botones, text="Matricular", command=validar_materia, style="Accent.TButton"
+            botones, text="Matricular", command=lambda: validar_materia(total_creditos), style="Accent.TButton"
         ).pack(side="right")
         botones.grid(row=1, column=0, columnspan=2, sticky="e", pady=(18, 0))
 
