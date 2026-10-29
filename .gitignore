@@ -8,3 +8,4 @@ Facturas_Matriculas/*
 Registro_Matriculas.xlsx
 __pycache__
 recursos/
+.env
