@@ -3,11 +3,11 @@ from datetime import date
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+import mariadb
 import sv_ttk
+from dotenv import dotenv_values
 from fpdf import FPDF
 from fpdf.fonts import FontFace
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill
 from rich.console import Console
 
 estilo_encabezado = FontFace(emphasis="BOLD")
@@ -16,13 +16,20 @@ root = tk.Tk()
 root.title("Sistema de Matrículas")
 root.minsize(500, 500)
 
-ruta_archivo = Path(__file__).with_name("Registro_Matriculas.xlsx")
 ruta_logo = Path(__file__).with_name("image.png")
 imagen_tk = tk.PhotoImage(file=ruta_logo).subsample(3, 3)
 
 VALOR_CREDITO: int = 70_000
 
 consola = Console()
+
+env_vars = dotenv_values(".env")
+data = {} 
+for llave, valor in env_vars.items():
+    data[llave.lower()] = valor
+
+def conexion():
+    return mariadb.connect(**data)  # type: ignore
 
 
 def button(
@@ -38,147 +45,18 @@ def button(
     boton.pack(padx=padx, pady=pady)
 
 
-def crear_archivo_excel():
-    if not ruta_archivo.exists():
-        Nuevo_Archivo_Excel = Workbook()
-        hoja_estudiante = Nuevo_Archivo_Excel.active
-        hoja_estudiante.title = "Estudiantes"
-        Nuevo_Archivo_Excel.create_sheet("Materias")
-        Nuevo_Archivo_Excel.create_sheet("Matriculas")
-        Nuevo_Archivo_Excel.create_sheet("Facultades")
-        Nuevo_Archivo_Excel.create_sheet("Notas")
-        Nuevo_Archivo_Excel.create_sheet("Carreras")
-
-        Encabezados: dict[str, list[str]] = {
-            "Materias": ["Código", "Nombre", "Creditos", "ID_Facultad"],
-            "Facultades": ["Id facultad", "Nombre"],
-            "Estudiantes": [
-                "Cedula",
-                "Nombres",
-                "Apellidos",
-                "Correo",
-                "Telefono",
-                "ID_Carrera",  # llave foránea
-            ],
-            "Carreras": ["Id carrera", "Nombre", "ID_Facultad"],
-            "Matriculas": [
-                "Id matricula",
-                "Cedula",
-                "Codigo materia",
-                "Periodo",
-                "Creditos",  # Debe estar entre 2 y 12 créditos
-                "Fecha matricula",
-            ],
-            "Notas": [
-                "Id_Nota",
-                "id_matricula",
-                "id_materia",
-                "cedula estudiante",
-                "Nota 1",
-                "Nota 2",
-                "Nota 3",
-                "Promedio",
-            ],
-        }
-
-        for (
-            nombre_hoja,
-            lista_encabezados,
-        ) in (
-            Encabezados.items()
-        ):  # Establecer los encabezados en la primera fila de cada hoja
-            hoja_actual = Nuevo_Archivo_Excel[nombre_hoja]
-            for columnas, encabezado in enumerate(
-                lista_encabezados, start=1
-            ):  # Establecer los encabezados en la primera fila de cada hoja
-                celda = hoja_actual.cell(
-                    row=1, column=columnas, value=encabezado
-                )  # Establecer el valor de la celda en la primera fila y columna correspondiente al encabezado
-                celda.font = Font(
-                    bold=True, color="FFFFFF"
-                )  # Establecer el estilo de fuente en negrita y color blanco para los encabezados
-                celda.fill = PatternFill(
-                    start_color="4F81BD", end_color="4F81BD", fill_type="solid"
-                )  # Establecer el color de fondo azul para los encabezados
-                celda.alignment = Alignment(
-                    horizontal="center", vertical="center"
-                )  # Alinear el texto de los encabezados al centro horizontal y verticalmente
-
-        Nuevo_Archivo_Excel.save(ruta_archivo)
-        consola.log(f"Archivo de Excel creado exitosamente: {ruta_archivo}")
-    else:
-        Nuevo_Archivo_Excel = load_workbook(ruta_archivo)
-        consola.log(f"El archivo ya existe y fue abierto: {ruta_archivo}")
-
-    return Nuevo_Archivo_Excel
-
-
-def guardar_datos(hoja, datos):
-    datos_get = []
-    for dato in datos:
-        if isinstance(dato, ttk.Entry):
-            dato_get = dato.get()
-        else:
-            dato_get = dato
-
-        datos_get.append(dato_get.strip())
-
-        if dato_get == "":
-            messagebox.showerror(
-                title="Error", message="Uno o más campos están vacíos."
-            )
-            return
-    hoja.append(datos_get)  # Agregar los datos a la hoja de cálculo
-    hoja.parent.save(ruta_archivo)  # Guardar los cambios en el archivo de Excel
-    messagebox.showinfo(title="Éxito", message="Datos guardados exitosamente.")
-
-
-def buscar_fila(hoja, columna, valor):
-    buscado = (
-        str(valor).strip().lower()
-    )  # Convertir el valor a minúsculas y eliminar espacios en blanco al inicio y al final para una búsqueda más flexible.
-    for fila in hoja.iter_rows(
-        min_row=2,
-        values_only=True,  # Comenzar desde la fila 2 para omitir los encabezados
-    ):
-        if (
-            str(fila[columna]).strip().lower() == buscado
-        ):  # Comparar el valor de la celda con el valor buscado, ignorando mayúsculas y minúsculas y espacios en blanco
-            return fila
-    return None
-
-
-def siguiente_id(hoja):
-    identificadores = [
-        int(fila[0]) for fila in hoja.iter_rows(min_row=2, values_only=True)
-    ]
-    return max(identificadores, default=0) + 1
-
-
 def registrar_facultad():
-    libro = load_workbook(ruta_archivo)
-    hoja_facultades = libro["Facultades"]
-
     def guardar(valores):
         nombre_facultad = valores["nombre_facultad"].strip().lower()
+        # El contexto se encarga de cerrar las conexiones, evitando tener que usar conn.close() manualmente
+        with conexion() as conn, conn.cursor() as cur:
+            try:
+                cur.execute("INSERT INTO FACULTADES (NOMBRE) VALUES (?)", (nombre_facultad,))
+                conn.commit()  # Enviar a la base de datos los cambios realizados
+            except mariadb.IntegrityError as e:
+                messagebox.showerror(title="Error", message=f"La facultad posiblemente ya existe\nDetalles: {e}")
+                return False
 
-        max_id = 0
-        for fila in hoja_facultades.iter_rows(min_row=2, values_only=True):
-            if fila and len(fila) > 1 and fila[1]:
-                if str(fila[1]).strip().lower() == nombre_facultad:
-                    messagebox.showerror(
-                        title="Error", message="La facultad ya existe."
-                    )
-                    return False
-                if fila[0] is not None:
-                    try:
-                        max_id = max(max_id, int(fila[0]))
-                    except ValueError:
-                        pass
-
-        nuevo_id = str(max_id + 1)
-        hoja_facultades.append([nuevo_id, nombre_facultad])
-        libro.save(ruta_archivo)
         messagebox.showinfo(title="Exito", message="Facultad registrada exitosamente.")
         return True
 
@@ -191,74 +69,58 @@ def registrar_facultad():
 
 
 def registrar_carrera():
-    libro = load_workbook(ruta_archivo)
-    hoja_carreras = libro["Carreras"]
-    hoja_facultades = libro["Facultades"]
+    facultades_dict = {}
+    
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT ID, NOMBRE FROM FACULTADES")
+        for id_facultad, nombre in cur.fetchall():
+            facultades_dict[nombre.strip()] = id_facultad
+   
+    if not facultades_dict:
+        messagebox.showwarning(
+            "Facultades requeridas",
+            "Debe registrar al menos una facultad antes de ingresar carreras.",
+            parent=root,
+        )
+        return
 
     def guardar(valores):
-        for carrera in hoja_carreras.iter_rows(min_row=2, values_only=True):
-            if (
-                str(carrera[1]).strip().lower()
-                == valores["nombre_carrera"].strip().lower()
-            ):
-                messagebox.showerror(title="Error", message="La carrera ya existe.")
+        nombre_carrera = valores["nombre_carrera"].strip()
+        id_facultad = facultades_dict[valores["facultad"].strip()]
+
+        with conexion() as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "INSERT INTO CARRERAS (NOMBRE, ID_FACULTAD) VALUES (?, ?)", (nombre_carrera, id_facultad),
+                )
+                conn.commit()
+            except mariadb.IntegrityError as e:
+                messagebox.showerror(title="Error", message=f"La carrera posiblemente ya existe\nDetalles: {e}")
                 return False
-        id_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])[0]
-        hoja_carreras.append(
-            [siguiente_id(hoja_carreras), valores["nombre_carrera"], id_facultad]
-        )
-        libro.save(ruta_archivo)
+        
         messagebox.showinfo(title="Exito", message="Carrera registrada exitosamente.")
         return True
-
-    facultades = []
-
-    for fila in hoja_facultades.iter_rows(min_row=2, values_only=True):
-        facultades.append(str(fila[1]).strip())
 
     ventana_formulario(
         root,
         "Registrar Carrera",
         [
             ("nombre_carrera", "Nombre de la carrera:"),
-            ("facultad", "Facultad:", facultades),
+            ("facultad", "Facultad:", list(facultades_dict.keys())),
         ],
         guardar,
     )
 
 
-def validar(hoja, datos, columna, id_get, tipo="estudiante"):
-    fila_existente = buscar_fila(hoja, columna, id_get.get())
-    if fila_existente:
-        if tipo == "estudiante":
-            messagebox.showerror(
-                title="Error", message="El estudiante con esa identificación ya existe."
-            )
-            return
-        elif tipo == "materia":
-            messagebox.showerror(
-                title="Error", message="La materia con ese código ya existe."
-            )
-            return
-    facultades = load_workbook(ruta_archivo)["Facultades"]
-    f_nombre = datos[-1].get().strip().lower()
-    fila = buscar_fila(facultades, 1, f_nombre)
-    if not fila:
-        messagebox.showerror(title="Error", message="La facultad ingresada no existe.")
-        return
-    datos[-1] = fila[0]
-    guardar_datos(hoja, datos)
-
-
 def registrar_estudiante():
-    libro = load_workbook(ruta_archivo)
-    hoja_carreras = libro["Carreras"]
+    carreras = []
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT ID, NOMBRE FROM CARRERAS")
+        carreras = cur.fetchall()
 
     # Obtener lista de facultades para el Combobox
     carreras = [
-        str(fila[1]).strip()
-        for fila in hoja_carreras.iter_rows(min_row=2, values_only=True)
-        if fila and fila[1]
+        str(fila[1]).strip() for fila in carreras
     ]
 
     if not carreras:
@@ -270,33 +132,29 @@ def registrar_estudiante():
         return
 
     def guardar(valores):
-        hoja_estudiantes = libro["Estudiantes"]
-
-        # Validar si la cédula ya existe
-        if buscar_fila(hoja_estudiantes, 0, valores["cedula"]):
-            messagebox.showerror(
-                "Identificación duplicada",
-                "Ya existe un estudiante con esa cédula.",
-                parent=root,
-            )
-            return False
-
         # Buscar el ID de la facultad seleccionada
-        fila_carrera = buscar_fila(hoja_carreras, 1, valores["carrera"])
-        id_carrera = fila_carrera[0] if fila_carrera else ""
+        id_carrera = None
+        with conexion() as conn, conn.cursor() as cur:
+            cur.execute("SELECT ID FROM CARRERAS WHERE NOMBRE = ?", (valores["carrera"],))
+            id_carrera = cur.fetchone()[0]
 
-        # Guardar en Excel
-        datos = [
+        datos = (
             valores["cedula"],
             valores["nombre"],
             valores["apellido"],
             valores["correo"],
             valores["telefono"],
             id_carrera,
-        ]
+        )
+        
+        with conexion() as conn, conn.cursor() as cur:
+            try:
+                cur.execute("INSERT INTO ESTUDIANTES VALUES (?, ?, ?, ?, ?, ?)", datos)
+                conn.commit()
+            except mariadb.IntegrityError as e:
+                messagebox.showerror(title="Error", message=f"Error al registrar el estudiante: {e}")
+                return False
 
-        hoja_estudiantes.append(datos)
-        libro.save(ruta_archivo)
         messagebox.showinfo(
             "Éxito", "Estudiante registrado correctamente.", parent=root
         )
@@ -318,16 +176,13 @@ def registrar_estudiante():
 
 
 def registrar_materia():
-    libro = load_workbook(ruta_archivo)
-    hoja_facultades = libro["Facultades"]
+    facultades_dict = {}
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT ID, NOMBRE FROM FACULTADES")
+        for id_facultad, nombre in cur.fetchall():
+            facultades_dict[nombre.strip()] = id_facultad
 
-    facultades = [
-        str(fila[1]).strip()
-        for fila in hoja_facultades.iter_rows(min_row=2, values_only=True)
-        if fila and fila[1]
-    ]
-
-    if not facultades:
+    if not facultades_dict:
         messagebox.showwarning(
             "Facultades requeridas",
             "Debe registrar al menos una facultad antes de ingresar materias.",
@@ -336,32 +191,32 @@ def registrar_materia():
         return
 
     def guardar(valores):
-        hoja_materias = libro["Materias"]
-
-        # Validar si el código de la materia ya existe
-        if buscar_fila(hoja_materias, 0, valores["codigo"]):
+        try:
+            codigo = int(valores["codigo"].strip())
+        except ValueError:
             messagebox.showerror(
-                "Código duplicado",
-                "Ya existe una materia con ese código.",
+                "Código inválido",
+                "El código de la materia debe ser un número entero.",
                 parent=root,
             )
             return False
+        
+        id_facultad = facultades_dict[valores["facultad"].strip()]
 
-        # Buscar el ID de la facultad seleccionada
-        fila_facultad = buscar_fila(hoja_facultades, 1, valores["facultad"])
-        id_facultad = fila_facultad[0] if fila_facultad else ""
-
-        # Guardar en Excel
-        datos = [
-            valores["codigo"],
-            valores["nombre"].lower(),
-            valores["creditos"],
-            id_facultad,
-        ]
-
-        hoja_materias.append(datos)
-        libro.save(ruta_archivo)
-        messagebox.showinfo("Éxito", "Materia registrada correctamente.", parent=root)
+        with conexion() as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "INSERT INTO MATERIAS (ID, NOMBRE, CREDITOS, ID_FACULTAD) VALUES (?, ?, ?, ?)",
+                    (codigo, valores["nombre"].strip().lower(), int(valores["creditos"]), id_facultad),
+                )
+                conn.commit()
+            except mariadb.IntegrityError as e:
+                messagebox.showerror(title="Error", message=f"La materia posiblemente ya existe\nDetalles: {e}")
+                return False
+        
+        messagebox.showinfo(
+            "Éxito", "Materia registrada correctamente.", parent=root
+        )
         return True
 
     # Crear ventana para registrar materia
@@ -375,7 +230,7 @@ def registrar_materia():
             (
                 "facultad",
                 "Facultad:",
-                facultades,
+                list(facultades_dict.keys()),
             ),  # Muestra la lista de facultades registradas en un Combobox para seleccionar la facultad correspondiente a la materia
         ],
         guardar,
@@ -834,8 +689,6 @@ def factura_form():
 
 
 def menu_principal():
-    crear_archivo_excel()
-
     etiqueta_logo = ttk.Label(root, image=imagen_tk)
     etiqueta_logo.pack(pady=(25, 10))
 
