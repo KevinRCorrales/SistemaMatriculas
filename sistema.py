@@ -472,12 +472,17 @@ def registrar_notas():
 
     def guardar(datos):
         encontrado: bool = False
+        materias_dict = {}
+        id_materia = ""
+        for materia in hoja_materias.iter_rows(min_row=2, values_only=True):
+            materias_dict[str(materia[1]).strip()] = str(materia[0]).strip()
         for matricula in hoja_matriculas.iter_rows(min_row=2, values_only=True):
             if (
-                str(matricula[1]).strip() == datos["id_estudiante"]
-                and str(matricula[2]).strip() == datos["id_materia"]
+                str(matricula[1]).strip() == str(datos["id_estudiante"])
+                and str(matricula[2]).strip() == str(materias_dict[datos["nombre_materia"]])
             ):
                 id_matricula = matricula[0]
+                id_materia = str(matricula[2]).strip()
                 encontrado = True
                 break
 
@@ -495,7 +500,7 @@ def registrar_notas():
             [
                 siguiente_id(hoja_notas),
                 id_matricula,
-                str(datos["id_materia"]).strip(),
+                id_materia,
                 str(datos["id_estudiante"]).strip(),
                 datos["nota1"],
                 datos["nota2"],
@@ -528,7 +533,7 @@ def registrar_notas():
         "Registrar Notas",
         [
             ("id_estudiante", "Cédula/TI del estudiante:", cedulas),
-            ("id_materia", "Nombre de la matrícula:", materias),
+            ("nombre_materia", "Nombre de la matrícula:", materias),
             ("nota1", "Nota 1:"),
             ("nota2", "Nota 2:"),
             ("nota3", "Nota 3:"),
