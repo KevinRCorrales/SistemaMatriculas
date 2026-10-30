@@ -24,9 +24,10 @@ VALOR_CREDITO: int = 70_000
 consola = Console()
 
 env_vars = dotenv_values(".env")
-data = {} 
+data = {}
 for llave, valor in env_vars.items():
     data[llave.lower()] = valor
+
 
 def conexion():
     return mariadb.connect(**data)  # type: ignore
@@ -51,13 +52,18 @@ def registrar_facultad():
         # El contexto se encarga de cerrar las conexiones, evitando tener que usar conn.close() manualmente
         with conexion() as conn, conn.cursor() as cur:
             try:
-                cur.execute("INSERT INTO FACULTADES (NOMBRE) VALUES (?)", (nombre_facultad,))
+                cur.execute(
+                    "INSERT INTO FACULTADES (NOMBRE) VALUES (?)", (nombre_facultad,)
+                )
                 conn.commit()  # Enviar a la base de datos los cambios realizados
             except mariadb.IntegrityError as e:
-                messagebox.showerror(title="Error", message=f"La facultad posiblemente ya existe\nDetalles: {e}")
+                messagebox.showerror(
+                    title="Error",
+                    message=f"La facultad posiblemente ya existe\nDetalles: {e}",
+                )
                 return False
 
-        messagebox.showinfo(title="Exito", message="Facultad registrada exitosamente.")
+        messagebox.showinfo(title="Éxito", message="Facultad registrada exitosamente.")
         return True
 
     ventana_formulario(
@@ -70,12 +76,12 @@ def registrar_facultad():
 
 def registrar_carrera():
     facultades_dict = {}
-    
+
     with conexion() as conn, conn.cursor() as cur:
         cur.execute("SELECT ID, NOMBRE FROM FACULTADES")
         for id_facultad, nombre in cur.fetchall():
             facultades_dict[nombre.strip()] = id_facultad
-   
+
     if not facultades_dict:
         messagebox.showwarning(
             "Facultades requeridas",
@@ -91,14 +97,18 @@ def registrar_carrera():
         with conexion() as conn, conn.cursor() as cur:
             try:
                 cur.execute(
-                    "INSERT INTO CARRERAS (NOMBRE, ID_FACULTAD) VALUES (?, ?)", (nombre_carrera, id_facultad),
+                    "INSERT INTO CARRERAS (NOMBRE, ID_FACULTAD) VALUES (?, ?)",
+                    (nombre_carrera, id_facultad),
                 )
                 conn.commit()
             except mariadb.IntegrityError as e:
-                messagebox.showerror(title="Error", message=f"La carrera posiblemente ya existe\nDetalles: {e}")
+                messagebox.showerror(
+                    title="Error",
+                    message=f"La carrera posiblemente ya existe\nDetalles: {e}",
+                )
                 return False
-        
-        messagebox.showinfo(title="Exito", message="Carrera registrada exitosamente.")
+
+        messagebox.showinfo(title="Éxito", message="Carrera registrada exitosamente.")
         return True
 
     ventana_formulario(
@@ -119,9 +129,7 @@ def registrar_estudiante():
         carreras = cur.fetchall()
 
     # Obtener lista de facultades para el Combobox
-    carreras = [
-        str(fila[1]).strip() for fila in carreras
-    ]
+    carreras = [str(fila[1]).strip() for fila in carreras]
 
     if not carreras:
         messagebox.showwarning(
@@ -135,7 +143,9 @@ def registrar_estudiante():
         # Buscar el ID de la facultad seleccionada
         id_carrera = None
         with conexion() as conn, conn.cursor() as cur:
-            cur.execute("SELECT ID FROM CARRERAS WHERE NOMBRE = ?", (valores["carrera"],))
+            cur.execute(
+                "SELECT ID FROM CARRERAS WHERE NOMBRE = ?", (valores["carrera"],)
+            )
             id_carrera = cur.fetchone()[0]
 
         datos = (
@@ -146,13 +156,15 @@ def registrar_estudiante():
             valores["telefono"],
             id_carrera,
         )
-        
+
         with conexion() as conn, conn.cursor() as cur:
             try:
                 cur.execute("INSERT INTO ESTUDIANTES VALUES (?, ?, ?, ?, ?, ?)", datos)
                 conn.commit()
             except mariadb.IntegrityError as e:
-                messagebox.showerror(title="Error", message=f"Error al registrar el estudiante: {e}")
+                messagebox.showerror(
+                    title="Error", message=f"Error al registrar el estudiante: {e}"
+                )
                 return False
 
         messagebox.showinfo(
@@ -200,23 +212,29 @@ def registrar_materia():
                 parent=root,
             )
             return False
-        
+
         id_facultad = facultades_dict[valores["facultad"].strip()]
 
         with conexion() as conn, conn.cursor() as cur:
             try:
                 cur.execute(
                     "INSERT INTO MATERIAS (ID, NOMBRE, CREDITOS, ID_FACULTAD) VALUES (?, ?, ?, ?)",
-                    (codigo, valores["nombre"].strip().lower(), int(valores["creditos"]), id_facultad),
+                    (
+                        codigo,
+                        valores["nombre"].strip().lower(),
+                        int(valores["creditos"]),
+                        id_facultad,
+                    ),
                 )
                 conn.commit()
             except mariadb.IntegrityError as e:
-                messagebox.showerror(title="Error", message=f"La materia posiblemente ya existe\nDetalles: {e}")
+                messagebox.showerror(
+                    title="Error",
+                    message=f"La materia posiblemente ya existe o se ingresó un dato inválido\nDetalles: {e}",
+                )
                 return False
-        
-        messagebox.showinfo(
-            "Éxito", "Materia registrada correctamente.", parent=root
-        )
+
+        messagebox.showinfo("Éxito", "Materia registrada correctamente.", parent=root)
         return True
 
     # Crear ventana para registrar materia
@@ -237,40 +255,38 @@ def registrar_materia():
     )
 
 
-def generar_id_matricula(hoja):
+def generar_id_matricula() -> int:
     fecha_hoy = date.today().strftime("%d%m%y")
 
     ultimo_contador = 0
 
-    for fila in hoja.iter_rows(min_row=2, values_only=True):
-        valor = str(fila[0]).strip()
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT ID_MATRICULA FROM MATRICULAS WHERE CAST(ID_MATRICULA AS CHAR) LIKE ?",
+            (f"%{fecha_hoy}",),
+        )
+        for resultado in cur.fetchall():
+            ultimo_contador = max(ultimo_contador, int(resultado[0]))
 
-        if not valor:
-            continue
-
-        # Si la fila tiene el formato: 01 + ddmmyy  -> 01090926
-        if len(valor) >= 8 and valor.endswith(fecha_hoy):
-            contador = int(valor[:2])
-            ultimo_contador = max(ultimo_contador, contador)
-
-    nuevo_contador = ultimo_contador + 1
-    return f"{nuevo_contador:02d}{fecha_hoy}"  # Formato: 01 + ddmmyy
+    nuevo_contador = str(ultimo_contador)[:-6]
+    if nuevo_contador == '':
+        nuevo_contador = 0
+    nuevo_contador = int(nuevo_contador) + 1
+    return int(f"{nuevo_contador}{fecha_hoy}")
 
 
-def obtener_total_creditos_estudiante(hoja_matriculas, cedula, periodo) -> int:
-    """
-    Obtener los créditos totales que el estudiante ha matriculado en
-    el periodo actual, la función retorna un entero, esto permitirá que más
-    adelante se revise si el estudiante puede matricular más materias o
-    excede los créditos máximos, también si un estudiante tiene menos del
-    mínimo permitido, negándose a generar la factura hasta que cumpla el rango.
-    """
+def obtener_total_creditos_estudiante(cedula, periodo) -> int:
     total_creditos: int = 0
-    for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
-        cedula_fila = str(fila[1]).strip()
-        periodo_fila = str(fila[3]).strip()
-        if cedula_fila == cedula and periodo_fila == periodo:
-            total_creditos += int(str(fila[4]).strip())
+
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT MATE.CREDITOS FROM MATRICULAS MATRI INNER JOIN MATERIAS MATE ON MATRI.COD_MATERIA = MATE.ID WHERE MATRI.IDENTIFICACION = ? AND MATRI.PERIODO = ?",
+            (cedula, periodo),
+        )
+        resultados = cur.fetchall()
+        if resultados:
+            for resultado in resultados:
+                total_creditos += resultado[0]
 
     return total_creditos
 
@@ -282,12 +298,6 @@ def registrar_matricula():
     8 matriculados, y selecciona una materia de 3, se le denegará, solo puede matricular esos 8 créditos o
     matricular una materia de 2 créditos. Esta función requiere ventana diferente a formulario sencillo.
     """
-    libro = load_workbook(ruta_archivo)
-    hoja_matriculas = libro["Matriculas"]
-    hoja_estudiantes = libro["Estudiantes"]
-    hoja_materias = libro["Materias"]
-    hoja_facultades = libro["Facultades"]
-    hoja_carreras = libro["Carreras"]
 
     def procesar_matricula(datos: dict):
         creditos_prematricula: int = 0
@@ -299,7 +309,12 @@ def registrar_matricula():
             nonlocal prematriculados
             nonlocal row_materia
             nombre_materia = materia.get().strip()
-            info_materia = buscar_fila(hoja_materias, 1, nombre_materia)
+            info_materia = None
+            with conexion() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM MATERIAS WHERE NOMBRE = ?", (nombre_materia,)
+                )
+                info_materia = cur.fetchone()
             if creditos_prematricula + int(info_materia[2]) > creditos_seleccionados:
                 messagebox.showinfo(
                     "Fallo de registro",
@@ -308,12 +323,12 @@ def registrar_matricula():
                 return
             creditos_prematricula += int(info_materia[2])
             prematriculados.append(nombre_materia)
-            ttk.Label(
-                marco, text=nombre_materia
-            ).grid(row=row_materia, column=0, sticky="w", padx=(0, 16), pady=7)
-            ttk.Label(
-                marco, text=f"{info_materia[2]} créditos"
-            ).grid(row=row_materia, column=1, sticky="ew", padx=(0, 16), pady=7)
+            ttk.Label(marco, text=nombre_materia).grid(
+                row=row_materia, column=0, sticky="w", padx=(0, 16), pady=7
+            )
+            ttk.Label(marco, text=f"{info_materia[2]} créditos").grid(
+                row=row_materia, column=1, sticky="ew", padx=(0, 16), pady=7
+            )
             ttk.Label(
                 marco,
                 text=f"Total créditos matriculados: {creditos_prematricula}/{total_creditos}",
@@ -341,27 +356,32 @@ def registrar_matricula():
             else:
                 periodo = f"{periodo}-2"
 
-            for nombre_materia in prematriculados:
-                datos_registro = []
-                materia_info = buscar_fila(hoja_materias, 1, nombre_materia)
-                datos_registro.append(generar_id_matricula(hoja_matriculas))
-                datos_registro.append(datos["id_estudiante"])
-                datos_registro.append(materia_info[0])
-                datos_registro.append(periodo)
-                datos_registro.append(materia_info[2])
-                datos_registro.append(fecha_matricula)
-                hoja_matriculas.append(datos_registro)
-            libro.save(ruta_archivo)
+            with conexion() as conn, conn.cursor() as cur:
+                for nombre_materia in prematriculados:
+                    try:
+                        cur.execute(
+                            "SELECT * FROM MATERIAS WHERE NOMBRE = ?", (nombre_materia,)
+                        )
+                        materia_info = cur.fetchone()
+                        datos_registro = (
+                            int(generar_id_matricula()),
+                            datos["id_estudiante"],
+                            materia_info[0],
+                            periodo,
+                            fecha_matricula,
+                        )
+                        cur.execute(
+                            "INSERT INTO MATRICULAS VALUES (?, ?, ?, ?, ?)", datos_registro
+                        )
+                        conn.commit()
+                    except mariadb.IntegrityError as e:
+                        messagebox.showerror("Error", f"La matrícula posiblemente ya existe o hay un dato inválido.\nDetalles: {e}")
+
             messagebox.showinfo(
                 "Éxito",
                 f"Se han registrado {len(prematriculados)} materias para el estudiante {datos['id_estudiante']}.",
             )
             pma_window.destroy()
-
-        datos_registro = [generar_id_matricula(hoja_matriculas)]
-
-        id_get = datos["id_estudiante"]
-        datos_registro.append(id_get)
 
         total_creditos = int(datos["creditos"])
 
@@ -381,31 +401,16 @@ def registrar_matricula():
         marco = ttk.Frame(pma_window, padding=24)
         marco.grid(sticky="nsew")
 
-        carrera_estudiante = buscar_fila(hoja_estudiantes, 0, id_get)[5]
-        facultad_estudiante = buscar_fila(hoja_carreras, 0, carrera_estudiante)[0]
-
         materias_facultad = []
 
-        for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-            if str(fila[3]).strip() == str(facultad_estudiante):
-                materias_facultad.append(str(fila[1]).strip())
-
-        # añadir también materias generales como humanidades e inglés
-        try:
-            id_humanidades = buscar_fila(hoja_facultades, 1, "humanidades")[0]
-            for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-                if str(fila[3]).strip() == str(id_humanidades):
-                    materias_facultad.append(str(fila[1]).strip())
-        except TypeError:
-            pass
-
-        try:
-            id_ingles = buscar_fila(hoja_facultades, 1, "ingles")[0]
-            for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-                if str(fila[3]).strip() == str(id_ingles):
-                    materias_facultad.append(str(fila[1]).strip())
-        except TypeError:
-            pass
+        with conexion() as conn, conn.cursor() as cur:
+            # Obtener todas las materias en una sola consulta, incluso las de humanidades e inglés
+            cur.execute(
+                "SELECT DISTINCT(M.NOMBRE) FROM MATERIAS M JOIN (FACULTADES F, ESTUDIANTES E, CARRERAS C) ON (M.ID_FACULTAD = F.ID AND C.ID_FACULTAD = F.ID AND C.ID = E.ID_CARRERA AND E.IDENTIFICACION = ?) OR (F.NOMBRE IN ('HUMANIDADES', 'INGLES') AND M.ID_FACULTAD = F.ID)",
+                (datos["id_estudiante"],),
+            )
+            for materia in cur.fetchall():
+                materias_facultad.append(materia[0])
 
         ttk.Label(marco, text="Seleccione las materias a matricular:").grid(
             row=0, column=0, sticky="w", padx=(0, 16), pady=7
@@ -418,15 +423,19 @@ def registrar_matricula():
         )
         materia.grid(row=0, column=1, sticky="ew", pady=7)
 
-        ttk.Label(marco, text=f"Total créditos matriculados: {creditos_prematricula}/{total_creditos}").grid(
-            row=1, column=0, sticky="w", padx=(0, 16), pady=7
-        )
+        ttk.Label(
+            marco,
+            text=f"Total créditos matriculados: {creditos_prematricula}/{total_creditos}",
+        ).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=7)
         botones = ttk.Frame(marco)
         ttk.Button(botones, text="Cancelar", command=pma_window.destroy).pack(
             side="right", padx=(8, 0)
         )
         ttk.Button(
-            botones, text="Matricular", command=lambda: validar_materia(total_creditos), style="Accent.TButton"
+            botones,
+            text="Matricular",
+            command=lambda: validar_materia(total_creditos),
+            style="Accent.TButton",
         ).pack(side="right")
         botones.grid(row=1, column=0, columnspan=2, sticky="e", pady=(18, 0))
 
@@ -441,14 +450,12 @@ def registrar_matricula():
         pma_window.focus_set()
         pma_window.mainloop()
 
-    materias = []
     estudiantes = []
 
-    for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-        materias.append(str(fila[1]).strip())
-
-    for fila in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
-        estudiantes.append(str(fila[0]).strip())
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT IDENTIFICACION FROM ESTUDIANTES")
+        for resultado in cur.fetchall():
+            estudiantes.append(resultado[0].strip())
 
     ventana_formulario(
         root,
@@ -464,51 +471,46 @@ def registrar_matricula():
 
 
 def registrar_notas():
-    libro = load_workbook(ruta_archivo)
-    hoja_notas = libro["Notas"]
-    hoja_materias = libro["Materias"]
-    hoja_estudiantes = libro["Estudiantes"]
-    hoja_matriculas = libro["Matriculas"]
-
     def guardar(datos):
-        encontrado: bool = False
-        materias_dict = {}
-        id_materia = ""
-        for materia in hoja_materias.iter_rows(min_row=2, values_only=True):
-            materias_dict[str(materia[1]).strip()] = str(materia[0]).strip()
-        for matricula in hoja_matriculas.iter_rows(min_row=2, values_only=True):
-            if (
-                str(matricula[1]).strip() == str(datos["id_estudiante"])
-                and str(matricula[2]).strip() == str(materias_dict[datos["nombre_materia"]])
-            ):
-                id_matricula = matricula[0]
-                id_materia = str(matricula[2]).strip()
-                encontrado = True
-                break
-
-        if not encontrado:
-            messagebox.showerror(
-                "Error", "El estudiante no está matriculado en la materia seleccionada."
+        id_matricula = None
+        with conexion() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT MATRI.ID_MATRICULA FROM MATRICULAS MATRI JOIN MATERIAS MATE ON ? = MATRI.IDENTIFICACION AND MATRI.COD_MATERIA = MATE.ID AND MATE.NOMBRE = ?",
+                (datos["id_estudiante"], datos["nombre_materia"]),
             )
-            return False
+            resultado = cur.fetchone()
+            if resultado:
+                id_matricula = str(resultado[0]).strip()
+            else:
+                messagebox.showerror(
+                    "Error",
+                    "El estudiante no está matriculado en la materia seleccionada.",
+                )
+                return False
 
         promedio = (
             float(datos["nota1"]) + float(datos["nota2"]) + float(datos["nota3"])
         ) / 3
 
-        hoja_notas.append(
-            [
-                siguiente_id(hoja_notas),
-                id_matricula,
-                id_materia,
-                str(datos["id_estudiante"]).strip(),
-                datos["nota1"],
-                datos["nota2"],
-                datos["nota3"],
-                str(round(promedio, 2)),
-            ]
-        )
-        libro.save(ruta_archivo)
+        with conexion() as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "INSERT INTO NOTAS (ID_MATRICULA, NOTA_1, NOTA_2, NOTA_3, PROMEDIO) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        id_matricula,
+                        datos["nota1"],
+                        datos["nota2"],
+                        datos["nota3"],
+                        promedio,
+                    ),
+                )
+                conn.commit()
+            except mariadb.IntegrityError as e:
+                messagebox.showerror(
+                    "Error",
+                    f"Posiblemente ya hay notas para esta matrícula.\nDetalles: {e}",
+                )
+                return False
 
         if promedio >= 3.0:
             messagebox.showinfo(
@@ -520,14 +522,19 @@ def registrar_notas():
                 "Registro exitoso",
                 f"Notas registradas exitosamente. El estudiante reprobó la materia con un promedio de {round(promedio, 2)}.",
             )
+        return True
 
     cedulas = []
-    for fila in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
-        cedulas.append(str(fila[0]).strip())
-
     materias = []
-    for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-        materias.append(str(fila[1]).strip())
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT IDENTIFICACION FROM ESTUDIANTES")
+        for resultado in cur.fetchall():
+            cedulas.append(str(resultado[0]).strip())
+
+        cur.execute("SELECT NOMBRE FROM MATERIAS")
+        for resultado in cur.fetchall():
+            materias.append(str(resultado[0]).strip())
+
     ventana_formulario(
         root,
         "Registrar Notas",
@@ -546,17 +553,15 @@ def generar_factura(datos: dict):
     id_estudiante = datos["id_estudiante"]
     periodo = datos["periodo"]
 
-    libro = load_workbook(ruta_archivo)
-    hoja_matriculas = libro["Matriculas"]
-    hoja_estudiantes = libro["Estudiantes"]
-    hoja_materias = libro["Materias"]
-
     # Obtengo la información del estudiante
-    fila_estudiante = buscar_fila(hoja_estudiantes, 0, id_estudiante)
+    fila_estudiante = []
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM ESTUDIANTES WHERE IDENTIFICACION = ?", (id_estudiante,)
+        )
+        fila_estudiante = cur.fetchone()
 
-    total_creditos = obtener_total_creditos_estudiante(
-        hoja_matriculas, id_estudiante, periodo
-    )
+    total_creditos = obtener_total_creditos_estudiante(id_estudiante, periodo)
     if total_creditos < 2:
         messagebox.showerror(
             "Error",
@@ -577,9 +582,10 @@ def generar_factura(datos: dict):
 
     # diccionario de materias para obtener el nombre de la materia a partir del código
     dict_materias: dict[str, str] = {}
-    for fila in hoja_materias.iter_rows(min_row=2, values_only=True):
-        if fila:
-            dict_materias[str(fila[0]).strip()] = str(fila[1]).strip()
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT ID, NOMBRE FROM MATERIAS")
+        for resultado in cur.fetchall():
+            dict_materias[str(resultado[0]).strip()] = str(resultado[1]).strip()
 
     # Obtener las matrículas del estudiante valores calculados
     matriculas_estudiante: list[list[str]] = [
@@ -587,12 +593,18 @@ def generar_factura(datos: dict):
     ]
 
     # Obtener todas las matriculas y listarlas en la factura
-    for fila in hoja_matriculas.iter_rows(min_row=2, values_only=True):
-        if str(fila[1]).strip() == id_estudiante and str(fila[3]).strip() == periodo:
-            cod_materia = str(fila[2]).strip()
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT MATRI.ID_MATRICULA, MATRI.COD_MATERIA, MATE.NOMBRE, MATE.CREDITOS FROM MATRICULAS MATRI JOIN MATERIAS MATE ON MATRI.COD_MATERIA = MATE.ID AND MATRI.IDENTIFICACION = ? AND MATRI.PERIODO = ?",
+            (id_estudiante, periodo),
+        )
+        resultados = cur.fetchall()
+
+        for fila in resultados:
+            cod_materia = str(fila[1]).strip()
             nombre_mat = dict_materias[cod_materia]
             matriculas_estudiante.append(
-                [str(fila[0]).strip(), cod_materia, nombre_mat, str(fila[4]).strip()]
+                [str(fila[0]).strip(), cod_materia, nombre_mat, str(fila[3]).strip()]
             )
 
     fecha_actual = date.today().strftime("%Y-%m-%d")
@@ -627,7 +639,7 @@ def generar_factura(datos: dict):
         align="C",
     )
     pdf.cell(
-        0, 6, f"Periodo academico: {periodo}", new_x="LMARGIN", new_y="NEXT", align="C"
+        0, 6, f"Periodo académico: {periodo}", new_x="LMARGIN", new_y="NEXT", align="C"
     )
     pdf.ln(6)
 
@@ -686,11 +698,12 @@ def generar_factura(datos: dict):
 
 
 def factura_form():
-    libro = load_workbook(ruta_archivo)
-    hoja_estudiantes = libro["Estudiantes"]
     cedulas = []
-    for estudiante in hoja_estudiantes.iter_rows(min_row=2, values_only=True):
-        cedulas.append(str(estudiante[0]).strip())
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute("SELECT IDENTIFICACION FROM ESTUDIANTES")
+        for resultado in cur.fetchall():
+            cedulas.append(resultado[0].strip())
+
     ventana_formulario(
         root,
         "Generar Factura",
