@@ -148,6 +148,21 @@ def registrar_estudiante():
             )
             id_carrera = cur.fetchone()[0]
 
+        correo: str = valores["correo"]
+        correo_valido: bool = True
+        try:
+            if not "." in correo.split("@")[1]:
+                correo_valido = False
+        except IndexError:
+            correo_valido = False
+
+        if not correo_valido:
+            messagebox.showwarning(
+                "Correo inválido",
+                "El correo ingresado parece no contener un '@' o un dominio válido."
+            )
+            return False
+
         datos = (
             valores["cedula"],
             valores["nombre"],
