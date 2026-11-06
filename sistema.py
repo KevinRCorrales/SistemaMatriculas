@@ -5,6 +5,7 @@ from tkinter import messagebox, ttk
 
 import mariadb
 import sv_ttk
+from darkdetect import theme
 from dotenv import dotenv_values
 from fpdf import FPDF
 from fpdf.fonts import FontFace
@@ -743,7 +744,7 @@ def menu_principal():
     button(root, "Registrar notas", registrar_notas)
     button(root, "Generar recibo de matrícula", factura_form)
 
-    sv_ttk.set_theme("dark")
+    sv_ttk.set_theme(theme().lower())
 
     root.mainloop()
 

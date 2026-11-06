@@ -9,3 +9,6 @@ Registro_Matriculas.xlsx
 __pycache__
 recursos/
 .env
+build/
+dist/
+sistema.spec

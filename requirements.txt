@@ -2,3 +2,4 @@ openpyxl
 fpdf2
 rich
 sv_ttk
+darkdetect
