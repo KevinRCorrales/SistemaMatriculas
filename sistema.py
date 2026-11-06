@@ -337,6 +337,12 @@ def registrar_matricula():
                     "La cantidad de créditos a matricular excede los seleccionados.",
                 )
                 return
+            if nombre_materia in prematriculados:
+                messagebox.showinfo(
+                    "Fallo de registro",
+                    "La materia ya ha sido seleccionada para matricular.",
+                )
+                return
             creditos_prematricula += int(info_materia[2])
             prematriculados.append(nombre_materia)
             ttk.Label(marco, text=nombre_materia).grid(
@@ -372,6 +378,15 @@ def registrar_matricula():
             else:
                 periodo = f"{periodo}-2"
 
+            if obtener_total_creditos_estudiante(datos["id_estudiante"], periodo) != 0:
+                messagebox.showwarning(
+                    "Advertencia",
+                    f"El estudiante ya tiene mátriculas en el periodo {periodo}.",
+                )
+                return
+
+            exitosas: int = 0
+
             with conexion() as conn, conn.cursor() as cur:
                 for nombre_materia in prematriculados:
                     try:
@@ -390,12 +405,13 @@ def registrar_matricula():
                             "INSERT INTO MATRICULAS VALUES (?, ?, ?, ?, ?)", datos_registro
                         )
                         conn.commit()
+                        exitosas += 1
                     except mariadb.IntegrityError as e:
                         messagebox.showerror("Error", f"La matrícula posiblemente ya existe o hay un dato inválido.\nDetalles: {e}")
 
             messagebox.showinfo(
-                "Éxito",
-                f"Se han registrado {len(prematriculados)} materias para el estudiante {datos['id_estudiante']}.",
+                "Información de registro",
+                f"Se han registrado {exitosas} de {len(prematriculados)} materias para el estudiante {datos['id_estudiante']}.",
             )
             pma_window.destroy()
 
