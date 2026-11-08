@@ -1,5 +1,13 @@
-openpyxl
-fpdf2
-rich
-sv_ttk
-darkdetect
+# Backend del portal de matrículas (FastAPI + MariaDB)
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+mariadb>=1.1.10
+python-dotenv>=1.0
+pydantic>=2.7
+jinja2>=3.1
+
+# Dependencias del sistema de escritorio (sistema.py)
+sv-ttk>=2.6
+darkdetect>=0.8
+fpdf2>=2.7
+rich>=13.7

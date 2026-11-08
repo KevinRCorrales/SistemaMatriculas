@@ -16,9 +16,12 @@ CREATE TABLE IF NOT EXISTS CARRERAS (
 
 CREATE TABLE IF NOT EXISTS MATERIAS (
                                         ID          INTEGER PRIMARY KEY CHECK ( ID > 100000 ),
-                                        NOMBRE      VARCHAR(30) NOT NULL UNIQUE,
+                                        NOMBRE      VARCHAR(30) NOT NULL,
                                         CREDITOS    INTEGER     NOT NULL CHECK ( CREDITOS > 0 ),
                                         ID_FACULTAD INTEGER     NOT NULL,
+                                        PERIODO     VARCHAR(7)  NOT NULL,
+                                        CUPOS       INTEGER     NOT NULL CHECK ( CUPOS >= 0 ),
+                                        HORARIO     VARCHAR(40) NOT NULL,
                                         CONSTRAINT FK_FACULTAD FOREIGN KEY (ID_FACULTAD) REFERENCES FACULTADES (ID)
                                     );
 
@@ -46,8 +49,8 @@ CREATE TABLE IF NOT EXISTS NOTAS (
                                      ID_NOTAS     INTEGER PRIMARY KEY AUTO_INCREMENT,
                                      ID_MATRICULA INTEGER       NOT NULL UNIQUE,
                                      CONSTRAINT FK_MATRICULA FOREIGN KEY (ID_MATRICULA) REFERENCES MATRICULAS (ID_MATRICULA),
-                                     NOTA_1       DECIMAL(3, 2) NOT NULL CHECK ( NOTA_1 > 0.0 ),
-                                     NOTA_2       DECIMAL(3, 2) NOT NULL CHECK ( NOTA_2 > 0.0 ),
-                                     NOTA_3       DECIMAL(3, 2) NOT NULL CHECK ( NOTA_3 > 0.0 ),
-                                     PROMEDIO     DECIMAL(3, 2) NOT NULL CHECK ( PROMEDIO > 0.0 )
+                                     NOTA_1       DECIMAL(3, 2) NOT NULL CHECK ( NOTA_1 >= 0.0 AND NOTA_1 <= 5.0 ),
+                                     NOTA_2       DECIMAL(3, 2) NOT NULL CHECK ( NOTA_2 >= 0.0 AND NOTA_2 <= 5.0 ),
+                                     NOTA_3       DECIMAL(3, 2) NOT NULL CHECK ( NOTA_3 >= 0.0 AND NOTA_3 <= 5.0 ),
+                                     PROMEDIO     DECIMAL(3, 2) NOT NULL CHECK ( PROMEDIO >= 0.0 AND PROMEDIO <= 5.0 )
                                  );

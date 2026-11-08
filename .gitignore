@@ -10,5 +10,9 @@ __pycache__
 recursos/
 .env
 build/
-dist/
 sistema.spec
+.pytest_cache
+.coverage
+*.log
+web/node_modules/
+web/dist/
