@@ -350,7 +350,7 @@ class CursorFalso:
         self.rowcount = 0
         self.lastrowid = 0
 
-    def execute(self, consulta, parametros=None):  # noqa: ANN001 - firma del conector
+    def execute(self, consulta, parametros=None):
         self._conexion.consultas.append(consulta)
 
     def fetchone(self):
@@ -401,11 +401,10 @@ def test_transaccion_revierte_todo_si_algo_falla(monkeypatch: pytest.MonkeyPatch
     conexion = ConexionFalsa()
     monkeypatch.setattr(servidor, "abrir_conexion", lambda: conexion)
 
-    with pytest.raises(servidor.ErrorNegocio):
-        with servidor.transaccion() as cursor:
-            cursor.execute("INSERT INTO MATRICULAS ...")
-            cursor.execute("UPDATE MATERIAS ...")
-            raise servidor.ErrorNegocio("fallo simulado a mitad de la matrícula")
+    with pytest.raises(servidor.ErrorNegocio), servidor.transaccion() as cursor:
+        cursor.execute("INSERT INTO MATRICULAS ...")
+        cursor.execute("UPDATE MATERIAS ...")
+        raise servidor.ErrorNegocio("fallo simulado a mitad de la matrícula")
 
     assert conexion.commits == 0
     assert conexion.rollbacks == 1

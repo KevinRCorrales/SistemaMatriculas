@@ -20,7 +20,7 @@ estudiantes, materias, matrícula, notas y recibos.
 - [Hatch](https://hatch.pypa.io/) para crear y usar el entorno del proyecto.
 - Node.js 20.19+ (o 22.12+) con npm, para compilar el portal React con Vite.
 - MariaDB 10.6 o superior con la base `universidad` creada a partir de `universidad.sql`.
-- En Windows hace falta una capa POSIX: **WSL2**, **Git Bash** o **MinGW-w64 con UCRT64**
+- Un sistema operativo compatible con el éstandar POSIX (GNU/Linux, macOS, FreeBSD). En Windows hace falta una capa POSIX: **WSL2**, **Git Bash** o **MinGW-w64 con UCRT64**
   (esta última es la opción recomendada).
 
 ## Instalación
@@ -29,7 +29,7 @@ Se usa Hatch tal como viene por defecto: crea su entorno virtual fuera del repos
 `pyproject.toml` ni configuración adicional.
 
 ```bash
-pip install --user hatch          # o: pipx install hatch
+pip install hatch          # o: pipx install hatch
 hatch run python -m pip install -r requirements-dev.txt
 cp .env.example .env
 cd web && npm install && cd ..    # dependencias del portal React
@@ -47,16 +47,16 @@ No se requieren migraciones: la API no crea ni modifica tablas.
 
 ## Configuración (`.env`)
 
-| Variable            | Obligatoria | Descripción                                                        |
-| ------------------- | ----------- | ------------------------------------------------------------------ |
-| `DATABASE_USER`     | Sí          | Usuario de MariaDB.                                                |
-| `DATABASE_PASSWORD` | Sí          | Contraseña del usuario.                                            |
-| `DATABASE_NAME`     | Sí          | Base de datos (por defecto `universidad`).                         |
-| `DATABASE_HOST`     | No          | Host del servidor (por defecto `localhost`).                       |
-| `DATABASE_PORT`     | No          | Puerto (por defecto `3306`).                                       |
+| Variable              | Obligatoria | Descripción                                                          |
+| --------------------- | ----------- | --------------------------------------------------------------------- |
+| `DATABASE_USER`     | Sí         | Usuario de MariaDB.                                                   |
+| `DATABASE_PASSWORD` | Sí         | Contraseña del usuario.                                              |
+| `DATABASE_NAME`     | Sí         | Base de datos (por defecto `universidad`).                          |
+| `DATABASE_HOST`     | No          | Host del servidor (por defecto `localhost`).                        |
+| `DATABASE_PORT`     | No          | Puerto (por defecto `3306`).                                        |
 | `API_HOST`          | No          | Host de FastAPI (por defecto `127.0.0.1`).                          |
 | `API_PORT`          | No          | Puerto de FastAPI (por defecto `3000`).                             |
-| `API_RELOAD`        | No          | `true` para recarga automática en desarrollo.                       |
+| `API_RELOAD`        | No          | `true` para recarga automática en desarrollo.                      |
 | `FRONTEND_ORIGIN`   | No          | Origen extra permitido por CORS (el portal servido usa mismo origen). |
 
 También se aceptan los nombres históricos de `sistema.py` (`USER`, `PASSWORD`, `DATABASE`,
@@ -70,7 +70,7 @@ Compila el portal una vez (y cada vez que cambies el frontend):
 cd web
 npm run build                     # genera web/dist
 cd ..
-hatch run python servidor.py
+hatch run fastapi run -e servidor:app --port 3000
 ```
 
 o, con recarga automática del backend:
@@ -89,25 +89,25 @@ Para trabajar en el frontend con recarga en caliente, deja el backend en el puer
 
 ## Endpoints
 
-| Método | Ruta                                            | Descripción                                                       |
-| ------ | ----------------------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/api/salud`                                    | Estado del servicio y de la conexión a MariaDB.                    |
-| GET    | `/api/dashboard?periodo=AAAA-N`                 | KPIs del periodo (recaudación, ocupación, aprobación, promedios), demanda por facultad y materia e histórico. |
-| GET    | `/api/facultades`                               | Lista de facultades.                                               |
-| POST   | `/api/facultades`                               | Crea una facultad (`{ "nombre" }`).                                |
-| GET    | `/api/carreras`                                 | Lista de carreras con su facultad.                                 |
-| POST   | `/api/carreras`                                 | Crea una carrera (`{ "nombre", "idFacultad" }`).                   |
-| GET    | `/api/estudiantes`                              | Lista de estudiantes.                                              |
-| POST   | `/api/estudiantes`                              | Crea un estudiante (documento, nombres, apellidos, correo, teléfono, `idCarrera`). |
-| GET    | `/api/estudiantes/{identificacion}`             | Consulta un estudiante.                                            |
-| GET    | `/api/estudiantes/{identificacion}/periodos`    | Periodos con matrículas del estudiante.                            |
-| GET    | `/api/estudiantes/{identificacion}/materias-disponibles?periodo=AAAA-N` | Oferta disponible para matrícula.       |
-| GET    | `/api/materias`                                 | Lista de ofertas de materias.                                      |
-| POST   | `/api/materias`                                 | Crea una oferta (`id`, `nombre`, `creditos`, `idFacultad`, `periodo`, `cupos`, `horario`); el horario se guarda en mayúsculas. |
-| GET    | `/api/matriculas?identificacion=...&periodo=...`| Matrículas del estudiante (periodo opcional), con su nota.          |
-| POST   | `/api/matriculas`                               | Matricula materias (`{ "identificacion", "periodo", "codigosMaterias": [...] }`). |
-| POST   | `/api/notas`                                    | Registra las tres notas (`{ "idMatricula", "nota1", "nota2", "nota3" }`). |
-| GET    | `/api/recibos?identificacion=...&periodo=...`   | Datos del recibo de matrícula (estudiante, materias, total a pagar). |
+| Método | Ruta                                                                      | Descripción                                                                                                                                  |
+| ------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET     | `/api/salud`                                                            | Estado del servicio y de la conexión a MariaDB.                                                                                              |
+| GET     | `/api/dashboard?periodo=AAAA-N`                                         | KPIs del periodo (recaudación, ocupación, aprobación, promedios), demanda por facultad y materia e histórico.                             |
+| GET     | `/api/facultades`                                                       | Lista de facultades.                                                                                                                          |
+| POST    | `/api/facultades`                                                       | Crea una facultad (`{ "nombre" }`).                                                                                                         |
+| GET     | `/api/carreras`                                                         | Lista de carreras con su facultad.                                                                                                            |
+| POST    | `/api/carreras`                                                         | Crea una carrera (`{ "nombre", "idFacultad" }`).                                                                                            |
+| GET     | `/api/estudiantes`                                                      | Lista de estudiantes.                                                                                                                         |
+| POST    | `/api/estudiantes`                                                      | Crea un estudiante (documento, nombres, apellidos, correo, teléfono, `idCarrera`).                                                         |
+| GET     | `/api/estudiantes/{identificacion}`                                     | Consulta un estudiante.                                                                                                                       |
+| GET     | `/api/estudiantes/{identificacion}/periodos`                            | Periodos con matrículas del estudiante.                                                                                                      |
+| GET     | `/api/estudiantes/{identificacion}/materias-disponibles?periodo=AAAA-N` | Oferta disponible para matrícula.                                                                                                            |
+| GET     | `/api/materias`                                                         | Lista de ofertas de materias.                                                                                                                 |
+| POST    | `/api/materias`                                                         | Crea una oferta (`id`, `nombre`, `creditos`, `idFacultad`, `periodo`, `cupos`, `horario`); el horario se guarda en mayúsculas. |
+| GET     | `/api/matriculas?identificacion=...&periodo=...`                        | Matrículas del estudiante (periodo opcional), con su nota.                                                                                   |
+| POST    | `/api/matriculas`                                                       | Matricula materias (`{ "identificacion", "periodo", "codigosMaterias": [...] }`).                                                           |
+| POST    | `/api/notas`                                                            | Registra las tres notas (`{ "idMatricula", "nota1", "nota2", "nota3" }`).                                                                   |
+| GET     | `/api/recibos?identificacion=...&periodo=...`                           | Datos del recibo de matrícula (estudiante, materias, total a pagar).                                                                         |
 
 Los errores siempre devuelven `{ "mensaje": "...", "campo": "..." }` con un código coherente:
 `422` para datos mal formados, `400` para reglas de negocio, `404` si no existe el recurso,

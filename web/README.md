@@ -16,11 +16,11 @@ npm install
 npm run dev
 ```
 
-Vite abre <http://127.0.0.1:5173/> y hace proxy de `/api` a `http://127.0.0.1:3000`, así que primero
+Vite abre [http://127.0.0.1:5173/](http://127.0.0.1:5173/) y hace proxy de `/api` a `http://127.0.0.1:3000`, así que primero
 levanta el backend:
 
 ```bash
-hatch run python servidor.py
+hatch run fastapi run -e servidor:app --port 3000
 ```
 
 ## Producción
@@ -96,8 +96,3 @@ desactiva todo el movimiento.
 La lógica también se comparte: `useFormulario` (validación, errores por campo, éxito y error del
 servidor), `useRecurso` (cargas con estados de espera y error) y `contexto.jsx` (catálogos y
 periodo), de modo que las vistas solo describen su contenido.
-
-## Versión anterior
-
-`legacy/` conserva los CSS y JS previos a la migración como referencia (el `index.html` anterior
-fue sustituido por la entrada de Vite). No se sirven desde el backend.

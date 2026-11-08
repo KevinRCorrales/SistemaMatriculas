@@ -3,7 +3,7 @@
 .idea
 *.xlsx*
 test.py
-Facturas_Matriculas/*
+Facturas_Matriculas/
 .vscode/
 Registro_Matriculas.xlsx
 __pycache__

@@ -31,7 +31,7 @@ for llave, valor in env_vars.items():
 
 
 def conexion():
-    return mariadb.connect(**data)  # type: ignore
+    return mariadb.connect(**data)
 
 
 def button(
@@ -152,7 +152,7 @@ def registrar_estudiante():
         correo: str = valores["correo"]
         correo_valido: bool = True
         try:
-            if not "." in correo.split("@")[1]:
+            if "." not in correo.split("@")[1]:
                 correo_valido = False
         except IndexError:
             correo_valido = False

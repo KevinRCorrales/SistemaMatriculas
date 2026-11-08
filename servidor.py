@@ -1026,7 +1026,7 @@ def obtener_recibo(identificacion: str, periodo: str) -> dict[str, Any]:
     }
 
 
-def _porcentaje(parte: int | float, total: int | float) -> float:
+def _porcentaje(parte: float, total: float) -> float:
     """Porcentaje redondeado a un decimal; 0.0 cuando el total es cero."""
     if not total:
         return 0.0
@@ -1412,13 +1412,3 @@ def crear_aplicacion() -> FastAPI:
 
 
 app = crear_aplicacion()
-
-
-if __name__ == "__main__":
-    cfg = configuracion()
-    uvicorn.run(
-        "servidor:app",
-        host=cfg["host_api"],
-        port=cfg["puerto_api"],
-        reload=cfg["recargar"],
-    )
