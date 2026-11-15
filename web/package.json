@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "description": "Portal web de gestión universitaria de la Universidad Cooperativa de Colombia.",
   "author": "Kevin Ramírez <kevin.ramirezcorr@campusucc.edu.co> y Mauro Jaramillo <mauro.jaramillo@campusucc.edu.co>",
+  "homepage": "https://github.com/KevinRCorrales/SistemaMatriculas",
+  "repository": {"url": "https://github.com/KevinRCorrales/SistemaMatriculas",
+                 "type": "git"
+                },  
   "contributors": [
     {
       "name": "Kevin Ramírez",
