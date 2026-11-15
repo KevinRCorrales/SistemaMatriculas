@@ -42,6 +42,8 @@ http://192.168.101.82:3000
 - macOS 12 o superior (Intel o Apple Silicon, según la compilación).
 - Conexión a la red donde está publicado el portal.
 
+Nota: En GNU/Linux (y otros Linux como Alpine) es necesario libcrypt.so.1 y si usa el AppImage es necesario adicionalmente libfuse.so.2
+
 No hace falta instalar Python, MariaDB, Node.js ni el navegador: el portal y la API siguen
 ejecutándose en el servidor.
 
