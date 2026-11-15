@@ -3,17 +3,52 @@ import { useDatos } from "../contexto";
 import { Icono } from "./ui";
 
 export const MODULOS = [
-  { clave: "inicio", etiqueta: "Panel institucional", icono: "panel", descripcion: "Indicadores y accesos rápidos" },
-  { clave: "facultades", etiqueta: "Facultades", icono: "facultad", descripcion: "Unidades académicas" },
-  { clave: "carreras", etiqueta: "Carreras", icono: "carrera", descripcion: "Programas por facultad" },
-  { clave: "estudiantes", etiqueta: "Estudiantes", icono: "estudiante", descripcion: "Registro y consulta" },
-  { clave: "materias", etiqueta: "Materias", icono: "materia", descripcion: "Oferta académica" },
-  { clave: "matricula", etiqueta: "Matrícula", icono: "matricula", descripcion: "Inscripción de materias" },
+  {
+    clave: "inicio",
+    etiqueta: "Panel institucional",
+    icono: "panel",
+    descripcion: "Indicadores y accesos rápidos",
+    soloAdmin: true
+  },
+  {
+    clave: "facultades",
+    etiqueta: "Facultades",
+    icono: "facultad",
+    descripcion: "Unidades académicas",
+    soloAdmin: true
+  },
+  {
+    clave: "carreras",
+    etiqueta: "Carreras",
+    icono: "carrera",
+    descripcion: "Programas por facultad",
+    soloAdmin: true
+  },
+  {
+    clave: "estudiantes",
+    etiqueta: "Estudiantes",
+    icono: "estudiante",
+    descripcion: "Registro y consulta",
+    soloAdmin: true
+  },
+  {
+    clave: "materias",
+    etiqueta: "Materias",
+    icono: "materia",
+    descripcion: "Oferta académica",
+    soloAdmin: true
+  },
+  {
+    clave: "matricula",
+    etiqueta: "Mi matrícula",
+    icono: "matricula",
+    descripcion: "Inscripción de materias"
+  },
   { clave: "notas", etiqueta: "Notas", icono: "notas", descripcion: "Calificaciones" },
   { clave: "recibos", etiqueta: "Recibos", icono: "recibo", descripcion: "Comprobante de matrícula" }
 ];
 
-export default function Layout({ ruta, children }) {
+export default function Layout({ ruta, modulos = MODULOS, usuario, esAdmin, onSalir, children }) {
   const { periodo, error } = useDatos();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
@@ -21,7 +56,10 @@ export default function Layout({ ruta, children }) {
     setMenuAbierto(false);
   }, [ruta]);
 
-  const actual = MODULOS.find((modulo) => modulo.clave === ruta) || MODULOS[0];
+  const actual = modulos.find((modulo) => modulo.clave === ruta) || modulos[0];
+  const nombreUsuario = esAdmin
+    ? usuario?.nombre || "Administrativo"
+    : [usuario?.nombres, usuario?.apellidos].filter(Boolean).join(" ") || "Estudiante";
 
   return (
     <div className={`app ${menuAbierto ? "app--menu-abierto" : ""}`}>
@@ -56,6 +94,22 @@ export default function Layout({ ruta, children }) {
             <strong>{periodo}</strong>
           </div>
         </div>
+
+        <div className="cabecera__usuario">
+          <div className="cabecera__identidad">
+            <span>{esAdmin ? "Administrativo" : "Estudiante"}</span>
+            <strong title={nombreUsuario}>{nombreUsuario}</strong>
+          </div>
+          <button
+            type="button"
+            className="boton boton--secundario cabecera__salir"
+            onClick={onSalir}
+            title="Cerrar sesión"
+          >
+            <Icono nombre="salir" />
+            <span>Cerrar sesión</span>
+          </button>
+        </div>
       </header>
 
       <div className="disposicion">
@@ -66,7 +120,7 @@ export default function Layout({ ruta, children }) {
         >
           <p className="navegacion__titulo">Módulos</p>
           <ul className="navegacion__lista">
-            {MODULOS.map((modulo) => (
+            {modulos.map((modulo) => (
               <li key={modulo.clave}>
                 <a
                   className={`nav-enlace ${modulo.clave === ruta ? "nav-enlace--activo" : ""}`}

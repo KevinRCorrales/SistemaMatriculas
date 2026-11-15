@@ -18,8 +18,8 @@ const ACCESOS = [
   {
     ruta: "#/matricula",
     icono: "matricula",
-    titulo: "Matricular estudiante",
-    texto: "Inscribe materias del periodo respetando cupos, horarios y el tope de 16 créditos."
+    titulo: "Consultar matrículas",
+    texto: "Revisa las materias inscritas por cada estudiante en el periodo y el estado de sus notas."
   },
   {
     ruta: "#/notas",
@@ -80,7 +80,7 @@ export default function Dashboard() {
         </div>
         <div className="portada__acciones">
           <a className="boton boton--primario" href="#/matricula">
-            Matricular estudiante <Icono nombre="flecha" />
+            Consultar matrículas <Icono nombre="flecha" />
           </a>
           <a className="boton boton--secundario" href="#/recibos">
             <Icono nombre="recibo" /> Ver recibos

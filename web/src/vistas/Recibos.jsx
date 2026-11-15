@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useDatos } from "../contexto";
 import { formatoCOP, formatoFecha, formatoNumero, iniciales, nombreCompleto } from "../formato";
@@ -14,9 +14,12 @@ import {
 } from "../componentes/ui";
 
 export default function Recibos() {
-  const { estudiantes } = useDatos();
+  const { estudiantes, esAdmin } = useDatos();
+  const propio = estudiantes[0];
 
-  const [identificacion, setIdentificacion] = useState("");
+  const [identificacion, setIdentificacion] = useState(() =>
+    esAdmin ? "" : propio?.identificacion || ""
+  );
   const [periodos, setPeriodos] = useState([]);
   const [periodo, setPeriodo] = useState("");
   const [recibo, setRecibo] = useState(null);
@@ -24,6 +27,14 @@ export default function Recibos() {
   const [buscando, setBuscando] = useState(false);
   const [error, setError] = useState(null);
   const [mensajeVacio, setMensajeVacio] = useState("");
+
+  useEffect(() => {
+    if (!esAdmin && propio?.identificacion) {
+      cambiarEstudiante(propio.identificacion);
+    }
+    // Se ejecuta al montar la vista del estudiante y si su perfil termina de cargar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esAdmin, propio?.identificacion]);
 
   async function cambiarEstudiante(documento) {
     setIdentificacion(documento);
@@ -72,30 +83,38 @@ export default function Recibos() {
   return (
     <div className="vista">
       <header className="vista__encabezado animar-arriba">
-        <p className="vista__modulo">Módulo 7</p>
-        <h2>Recibo de matrícula</h2>
+        <p className="vista__modulo">{esAdmin ? "Módulo 7" : "Mis pagos"}</p>
+        <h2>{esAdmin ? "Recibo de matrícula" : "Mis recibos"}</h2>
         <p>
-          Genera el comprobante con el detalle de materias, créditos y valor a pagar. Puedes
-          imprimirlo o guardarlo como PDF desde el diálogo de impresión.
+          {esAdmin ? "Consulta" : "Genera"} el comprobante con el detalle de materias, créditos y
+          valor a pagar. Puedes imprimirlo o guardarlo como PDF desde el diálogo de impresión.
         </p>
       </header>
 
       <div className="rejilla rejilla--recibo">
         <Tarjeta titulo="Datos del recibo" className="animar-arriba">
           <form className="formulario" onSubmit={generar}>
-            <Seleccion
-              etiqueta="Estudiante"
-              id="recibo-estudiante"
-              value={identificacion}
-              onChange={(evento) => cambiarEstudiante(evento.target.value)}
-            >
-              <option value="">Selecciona un estudiante</option>
-              {estudiantes.map((estudiante) => (
-                <option key={estudiante.identificacion} value={estudiante.identificacion}>
-                  {estudiante.identificacion} · {nombreCompleto(estudiante)}
-                </option>
-              ))}
-            </Seleccion>
+            {esAdmin ? (
+              <Seleccion
+                etiqueta="Estudiante"
+                id="recibo-estudiante"
+                value={identificacion}
+                onChange={(evento) => cambiarEstudiante(evento.target.value)}
+              >
+                <option value="">Selecciona un estudiante</option>
+                {estudiantes.map((estudiante) => (
+                  <option key={estudiante.identificacion} value={estudiante.identificacion}>
+                    {estudiante.identificacion} · {nombreCompleto(estudiante)}
+                  </option>
+                ))}
+              </Seleccion>
+            ) : (
+              <div className="recibo-identidad">
+                <span>Estudiante</span>
+                <strong>{propio ? nombreCompleto(propio) : "—"}</strong>
+                <span>Documento {propio?.identificacion || "—"}</span>
+              </div>
+            )}
 
             <Seleccion
               etiqueta="Periodo"
@@ -213,7 +232,9 @@ export default function Recibos() {
             !mensajeVacio && (
               <Tarjeta className="animar-arriba">
                 <Vacio titulo="Aún no hay recibo para mostrar">
-                  Selecciona un estudiante y el periodo para generar el comprobante.
+                  {esAdmin
+                    ? "Selecciona un estudiante y el periodo para generar el comprobante."
+                    : "Elige un periodo con matrículas para generar tu comprobante."}
                 </Vacio>
               </Tarjeta>
             )

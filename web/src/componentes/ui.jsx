@@ -137,6 +137,26 @@ const TRAZOS = {
       <circle cx="12" cy="12" r="9" />
       <polyline points="12 7.5 12 12.5 15.5 14.5" />
     </>
+  ),
+  candado: (
+    <>
+      <rect x="4" y="10" width="16" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      <line x1="12" y1="14.5" x2="12" y2="17" />
+    </>
+  ),
+  escudo: (
+    <>
+      <path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  salir: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </>
   )
 };
 

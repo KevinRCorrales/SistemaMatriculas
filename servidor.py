@@ -3,33 +3,30 @@
 Este archivo concentra todo el backend: configuración, acceso a datos,
 validaciones de negocio y rutas HTTP. No importa Tkinter ni abre ventanas;
 la lógica se extrajo de ``sistema.py`` respetando el esquema ``universidad.sql``.
-
-Ejecución (POSIX y Windows, desde la raíz del proyecto):
-
-    python -m uvicorn servidor:app --host 127.0.0.1 --port 3000
-
-o directamente:
-
-    python servidor.py
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import os
 import re
+import secrets
+import time
 import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import mariadb
-import uvicorn
 from dotenv import dotenv_values
-from fastapi import FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -43,6 +40,9 @@ VALOR_CREDITO = 70_000
 MAX_CREDITOS_MATRICULA = 16
 NOTA_APROBACION = 3.0
 FACULTADES_SERVICIO_GENERAL = ("HUMANIDADES", "INGLES")
+DURACION_SESION_SEGUNDOS = 8 * 60 * 60
+MAX_INTENTOS_ACCESO = 5
+VENTANA_INTENTOS_SEGUNDOS = 60
 
 RE_CORREO = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 RE_PERIODO = re.compile(r"^\d{4}-[12]$")
@@ -82,6 +82,8 @@ def configuracion() -> dict[str, Any]:
         "host_api": tomar("API_HOST", defecto="127.0.0.1"),
         "puerto_api": int(tomar("API_PORT", defecto="3000")),
         "recargar": tomar("API_RELOAD", defecto="false").lower() in {"1", "true", "si", "sí", "yes"},
+        "clave_admin": tomar("ADMIN_PASSWORD", "ADMIN_CLAVE"),
+        "clave_sesion": tomar("SESSION_SECRET", "SECRETO_SESION"),
     }
 
 
@@ -102,6 +104,142 @@ class ErrorNegocio(Exception):
         if self.campo:
             datos["campo"] = self.campo
         return datos
+
+
+# ---------------------------------------------------------------------------
+# Sesiones y control de intentos
+# ---------------------------------------------------------------------------
+_CLAVE_FALLBACK = secrets.token_bytes(32)
+_intentos_acceso: dict[str, list[float]] = {}
+_tokens_revocados: dict[str, float] = {}
+
+
+def _clave_sesion() -> bytes:
+    """Clave de firma de los tokens de sesión.
+
+    Se toma de ``SESSION_SECRET`` o, en su defecto, de la contraseña
+    administrativa. Si no hay ninguna configurada se usa una clave aleatoria
+    del proceso: las sesiones dejan de ser válidas al reiniciar el backend.
+    """
+    cfg = configuracion()
+    material = cfg["clave_sesion"] or cfg["clave_admin"]
+    if material:
+        return hashlib.sha256(material.encode("utf-8")).digest()
+    return _CLAVE_FALLBACK
+
+
+def _huella(valor: Any) -> bytes:
+    """Huella de longitud fija para comparar en tiempo constante."""
+    return hashlib.sha256(str(valor or "").encode("utf-8")).digest()
+
+
+def crear_token(rol: str, identificacion: str | None = None) -> str:
+    emision = int(time.time())
+    datos = {
+        "rol": rol,
+        "sub": identificacion,
+        "iat": emision,
+        "exp": emision + DURACION_SESION_SEGUNDOS,
+    }
+    cuerpo = (
+        base64.urlsafe_b64encode(json.dumps(datos, separators=(",", ":")).encode("utf-8"))
+        .decode("ascii")
+        .rstrip("=")
+    )
+    firma = hmac.new(_clave_sesion(), cuerpo.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{cuerpo}.{firma}"
+
+
+def verificar_token(token: str) -> dict[str, Any] | None:
+    """Devuelve los datos del token si la firma y la vigencia son válidas."""
+    try:
+        cuerpo, firma = str(token or "").split(".", 1)
+    except ValueError:
+        return None
+
+    esperada = hmac.new(_clave_sesion(), cuerpo.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(firma, esperada):
+        return None
+
+    revocado_hasta = _tokens_revocados.get(token)
+    if revocado_hasta and revocado_hasta > time.time():
+        return None
+
+    try:
+        relleno = "=" * (-len(cuerpo) % 4)
+        datos = json.loads(base64.urlsafe_b64decode(cuerpo + relleno))
+    except (ValueError, TypeError):
+        return None
+
+    if not isinstance(datos, dict) or datos.get("rol") not in {"estudiante", "administrativo"}:
+        return None
+    try:
+        if int(datos.get("exp", 0)) <= int(time.time()):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return datos
+
+
+def sesion_desde_cabecera(authorization: str | None) -> dict[str, Any]:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise ErrorNegocio("Inicia sesión para continuar.", campo="sesion", estado=401)
+    datos = verificar_token(authorization[7:].strip())
+    if not datos:
+        raise ErrorNegocio(
+            "La sesión no es válida o expiró. Vuelve a iniciar sesión.",
+            campo="sesion",
+            estado=401,
+        )
+    return datos
+
+
+def requiere_rol(*roles: str):
+    """Dependencia de FastAPI que exige uno de los roles indicados."""
+
+    def dependencia(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        sesion = sesion_desde_cabecera(authorization)
+        if sesion["rol"] not in roles:
+            raise ErrorNegocio(
+                "Tu usuario no tiene permisos para acceder a esta sección.",
+                campo="sesion",
+                estado=403,
+            )
+        return sesion
+
+    return dependencia
+
+
+def exigir_acceso_propio(sesion: dict[str, Any], identificacion: str) -> None:
+    """Un estudiante solo puede operar con su propia identificación."""
+    if sesion["rol"] == "administrativo":
+        return
+    if not hmac.compare_digest(_huella(sesion.get("sub")), _huella(identificacion)):
+        raise ErrorNegocio(
+            "Solo puedes consultar tu propia información académica.",
+            campo="identificacion",
+            estado=403,
+        )
+
+
+SesionAdmin = Annotated[dict[str, Any], Depends(requiere_rol("administrativo"))]
+SesionUsuario = Annotated[dict[str, Any], Depends(requiere_rol("estudiante", "administrativo"))]
+
+
+def _clave_intentos(rol: str, request: Request) -> str:
+    ip = request.client.host if request.client else "desconocida"
+    return f"{rol}:{ip}"
+
+
+def _limite_intentos_alcanzado(clave: str) -> bool:
+    ahora = time.time()
+    marcas = [marca for marca in _intentos_acceso.get(clave, []) if marca > ahora - VENTANA_INTENTOS_SEGUNDOS]
+    _intentos_acceso[clave] = marcas
+    return len(marcas) >= MAX_INTENTOS_ACCESO
+
+
+def _registrar_intento_fallido(clave: str) -> None:
+    _intentos_acceso.setdefault(clave, []).append(time.time())
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +644,7 @@ def obtener_estudiante(identificacion: str) -> dict[str, Any] | None:
         cur.execute(
             """
             SELECT E.IDENTIFICACION, E.NOMBRES, E.APELLIDOS, E.CORREO, E.TELEFONO,
-                   E.ID_CARRERA, C.NOMBRE, F.NOMBRE
+                   E.ID_CARRERA, C.NOMBRE, F.NOMBRE, C.ID_FACULTAD
             FROM ESTUDIANTES E
             JOIN CARRERAS C ON C.ID = E.ID_CARRERA
             JOIN FACULTADES F ON F.ID = C.ID_FACULTAD
@@ -526,7 +664,50 @@ def obtener_estudiante(identificacion: str) -> dict[str, Any] | None:
         "idCarrera": int(fila[5]),
         "carrera": str(fila[6]).strip(),
         "facultad": str(fila[7]).strip(),
+        "idFacultad": int(fila[8]),
     }
+
+
+# ---------------------------------------------------------------------------
+# Autenticación
+# ---------------------------------------------------------------------------
+def autenticar_estudiante(correo: str, identificacion: str) -> dict[str, Any]:
+    """Valida correo + documento sin revelar cuál de los dos falló.
+
+    Se comparan huellas de longitud fija con ``hmac.compare_digest`` y, cuando
+    el documento no existe, se compara igualmente contra valores vacíos para
+    que el tiempo de respuesta no delate cuentas registradas.
+    """
+    correo_normalizado = str(correo or "").strip().lower()
+    documento = str(identificacion or "").strip()
+
+    with lectura() as cur:
+        cur.execute(
+            "SELECT IDENTIFICACION, CORREO FROM ESTUDIANTES WHERE IDENTIFICACION = ?",
+            (documento,),
+        )
+        fila = cur.fetchone()
+
+    correo_bd = str(fila[1]).strip().lower() if fila else ""
+    documento_bd = str(fila[0]).strip() if fila else ""
+    coincide_correo = hmac.compare_digest(_huella(correo_normalizado), _huella(correo_bd))
+    coincide_documento = hmac.compare_digest(_huella(documento), _huella(documento_bd))
+
+    if not (fila and coincide_correo and coincide_documento):
+        raise ErrorNegocio(
+            "El correo y la identificación no coinciden con un estudiante registrado.",
+            campo="acceso",
+            estado=401,
+        )
+
+    perfil = obtener_estudiante(documento_bd)
+    if not perfil:
+        raise ErrorNegocio(
+            "El correo y la identificación no coinciden con un estudiante registrado.",
+            campo="acceso",
+            estado=401,
+        )
+    return perfil
 
 
 def listar_materias() -> list[dict[str, Any]]:
@@ -1230,6 +1411,15 @@ class NotaEntrada(BaseModel):
     nota3: float
 
 
+class AccesoEstudiante(BaseModel):
+    correo: str = Field(..., max_length=70)
+    identificacion: str = Field(..., max_length=20)
+
+
+class AccesoAdministrativo(BaseModel):
+    clave: str = Field(..., max_length=200)
+
+
 # ---------------------------------------------------------------------------
 # Aplicación
 # ---------------------------------------------------------------------------
@@ -1276,7 +1466,7 @@ def crear_aplicacion() -> FastAPI:
         allow_origins=sorted(origen for origen in origenes if origen),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],
     )
 
     app.add_exception_handler(ErrorNegocio, lambda request, exc: JSONResponse(
@@ -1304,35 +1494,120 @@ def crear_aplicacion() -> FastAPI:
             "base_de_datos": estado_base_de_datos(),
         }
 
+    # --- Acceso ----------------------------------------------------------
+    @app.post("/api/auth/estudiante")
+    def post_acceso_estudiante(datos: AccesoEstudiante, request: Request) -> dict[str, Any]:
+        clave_intentos = _clave_intentos("estudiante", request)
+        if _limite_intentos_alcanzado(clave_intentos):
+            raise ErrorNegocio(
+                "Demasiados intentos fallidos. Espera un minuto antes de volver a intentarlo.",
+                campo="acceso",
+                estado=429,
+            )
+        try:
+            perfil = autenticar_estudiante(datos.correo, datos.identificacion)
+        except ErrorNegocio:
+            _registrar_intento_fallido(clave_intentos)
+            raise
+        _intentos_acceso.pop(clave_intentos, None)
+        return {
+            "token": crear_token("estudiante", perfil["identificacion"]),
+            "expiraEn": int(time.time()) + DURACION_SESION_SEGUNDOS,
+            "usuario": {"rol": "estudiante", **perfil},
+        }
+
+    @app.post("/api/auth/administrativo")
+    def post_acceso_administrativo(datos: AccesoAdministrativo, request: Request) -> dict[str, Any]:
+        clave_intentos = _clave_intentos("administrativo", request)
+        if _limite_intentos_alcanzado(clave_intentos):
+            raise ErrorNegocio(
+                "Demasiados intentos fallidos. Espera un minuto antes de volver a intentarlo.",
+                campo="acceso",
+                estado=429,
+            )
+
+        configurada = configuracion()["clave_admin"]
+        if not configurada:
+            raise ErrorNegocio(
+                "El acceso administrativo no está configurado. Define ADMIN_PASSWORD en el archivo .env.",
+                campo="acceso",
+                estado=503,
+            )
+
+        # Se comparan huellas de longitud fija para no filtrar la longitud de la clave.
+        coincide = hmac.compare_digest(_huella(datos.clave), _huella(configurada))
+        if not coincide:
+            _registrar_intento_fallido(clave_intentos)
+            raise ErrorNegocio(
+                "La contraseña administrativa no es correcta.",
+                campo="clave",
+                estado=401,
+            )
+
+        _intentos_acceso.pop(clave_intentos, None)
+        return {
+            "token": crear_token("administrativo"),
+            "expiraEn": int(time.time()) + DURACION_SESION_SEGUNDOS,
+            "usuario": {"rol": "administrativo", "nombre": "Secretaría académica"},
+        }
+
+    @app.get("/api/auth/sesion")
+    def get_sesion(sesion: SesionUsuario) -> dict[str, Any]:
+        if sesion["rol"] == "administrativo":
+            return {"rol": "administrativo", "nombre": "Secretaría académica"}
+        perfil = obtener_estudiante(str(sesion.get("sub") or ""))
+        if not perfil:
+            raise ErrorNegocio("La cuenta ya no existe.", campo="sesion", estado=401)
+        return {"rol": "estudiante", **perfil}
+
+    @app.post("/api/auth/salir")
+    def post_salir(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization[7:].strip()
+            datos = verificar_token(token)
+            if datos:
+                _tokens_revocados[token] = float(datos["exp"])
+        return {"mensaje": "Sesión cerrada."}
+
+    # --- Panel institucional ---------------------------------------------
     @app.get("/api/dashboard")
-    def get_dashboard(periodo: str | None = Query(None, max_length=7)) -> dict[str, Any]:
+    def get_dashboard(
+        sesion: SesionAdmin,
+        periodo: str | None = Query(None, max_length=7),
+    ) -> dict[str, Any]:
         return resumen_institucional(periodo)
 
     # --- Facultades ------------------------------------------------------
     @app.get("/api/facultades")
-    def get_facultades() -> list[dict[str, Any]]:
+    def get_facultades(sesion: SesionAdmin) -> list[dict[str, Any]]:
         return listar_facultades()
 
     @app.post("/api/facultades", status_code=201)
-    def post_facultad(datos: FacultadEntrada) -> dict[str, Any]:
+    def post_facultad(
+        datos: FacultadEntrada, sesion: SesionAdmin
+    ) -> dict[str, Any]:
         return crear_facultad(datos.nombre)
 
     # --- Carreras --------------------------------------------------------
     @app.get("/api/carreras")
-    def get_carreras() -> list[dict[str, Any]]:
+    def get_carreras(sesion: SesionAdmin) -> list[dict[str, Any]]:
         return listar_carreras()
 
     @app.post("/api/carreras", status_code=201)
-    def post_carrera(datos: CarreraEntrada) -> dict[str, Any]:
+    def post_carrera(
+        datos: CarreraEntrada, sesion: SesionAdmin
+    ) -> dict[str, Any]:
         return crear_carrera(datos.nombre, datos.idFacultad)
 
     # --- Estudiantes -----------------------------------------------------
     @app.get("/api/estudiantes")
-    def get_estudiantes() -> list[dict[str, Any]]:
+    def get_estudiantes(sesion: SesionAdmin) -> list[dict[str, Any]]:
         return listar_estudiantes()
 
     @app.post("/api/estudiantes", status_code=201)
-    def post_estudiante(datos: EstudianteEntrada) -> dict[str, Any]:
+    def post_estudiante(
+        datos: EstudianteEntrada, sesion: SesionAdmin
+    ) -> dict[str, Any]:
         return crear_estudiante(
             datos.documento,
             datos.nombres,
@@ -1343,7 +1618,10 @@ def crear_aplicacion() -> FastAPI:
         )
 
     @app.get("/api/estudiantes/{identificacion}")
-    def get_estudiante(identificacion: str) -> dict[str, Any]:
+    def get_estudiante(
+        identificacion: str, sesion: SesionUsuario
+    ) -> dict[str, Any]:
+        exigir_acceso_propio(sesion, identificacion)
         estudiante = obtener_estudiante(identificacion)
         if not estudiante:
             raise ErrorNegocio("El estudiante seleccionado no existe.", "identificacion", estado=404)
@@ -1352,50 +1630,74 @@ def crear_aplicacion() -> FastAPI:
     @app.get("/api/estudiantes/{identificacion}/materias-disponibles")
     def get_materias_disponibles(
         identificacion: str,
+        sesion: SesionUsuario,
         periodo: str = Query(..., max_length=7),
     ) -> list[dict[str, Any]]:
+        exigir_acceso_propio(sesion, identificacion)
         periodo_limpio = validar_periodo(periodo)
         if not obtener_estudiante(identificacion):
             raise ErrorNegocio("El estudiante seleccionado no existe.", "identificacion", estado=404)
         return materias_disponibles(identificacion, periodo_limpio)
 
     @app.get("/api/estudiantes/{identificacion}/periodos")
-    def get_periodos(identificacion: str) -> list[str]:
+    def get_periodos(
+        identificacion: str, sesion: SesionUsuario
+    ) -> list[str]:
+        exigir_acceso_propio(sesion, identificacion)
         return listar_periodos(identificacion)
 
     # --- Materias --------------------------------------------------------
     @app.get("/api/materias")
-    def get_materias() -> list[dict[str, Any]]:
+    def get_materias(sesion: SesionAdmin) -> list[dict[str, Any]]:
         return listar_materias()
 
     @app.post("/api/materias", status_code=201)
-    def post_materia(datos: MateriaEntrada) -> dict[str, Any]:
+    def post_materia(
+        datos: MateriaEntrada, sesion: SesionAdmin
+    ) -> dict[str, Any]:
         return crear_materia(datos)
 
     # --- Matrículas ------------------------------------------------------
     @app.get("/api/matriculas")
     def get_matriculas(
+        sesion: SesionUsuario,
         identificacion: str = Query(..., max_length=20),
         periodo: str | None = Query(default=None, max_length=7),
     ) -> list[dict[str, Any]]:
+        exigir_acceso_propio(sesion, identificacion)
         periodo_limpio = validar_periodo(periodo) if periodo else None
         return listar_matriculas(identificacion, periodo_limpio)
 
     @app.post("/api/matriculas", status_code=201)
-    def post_matricula(datos: MatriculaEntrada) -> dict[str, Any]:
+    def post_matricula(
+        datos: MatriculaEntrada,
+        sesion: SesionUsuario,
+    ) -> dict[str, Any]:
+        # Solo el estudiante autenticado puede matricularse a sí mismo.
+        if sesion["rol"] != "estudiante":
+            raise ErrorNegocio(
+                "La matrícula la realiza directamente el estudiante desde su cuenta.",
+                campo="sesion",
+                estado=403,
+            )
+        exigir_acceso_propio(sesion, datos.identificacion)
         return registrar_matricula(datos.identificacion, datos.periodo, datos.codigosMaterias)
 
     # --- Notas -----------------------------------------------------------
     @app.post("/api/notas", status_code=201)
-    def post_notas(datos: NotaEntrada) -> dict[str, Any]:
+    def post_notas(
+        datos: NotaEntrada, sesion: SesionAdmin
+    ) -> dict[str, Any]:
         return registrar_notas(datos.idMatricula, datos.nota1, datos.nota2, datos.nota3)
 
     # --- Recibos ---------------------------------------------------------
     @app.get("/api/recibos")
     def get_recibo(
+        sesion: SesionUsuario,
         identificacion: str = Query(..., max_length=20),
         periodo: str = Query(..., max_length=7),
     ) -> dict[str, Any]:
+        exigir_acceso_propio(sesion, identificacion)
         return obtener_recibo(identificacion, periodo)
 
     # --- Portal web (React compilado) ------------------------------------

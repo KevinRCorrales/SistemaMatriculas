@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Layout, { MODULOS } from "./componentes/Layout";
 import { ProveedorDatos } from "./contexto";
+import { ProveedorSesion, useSesion } from "./sesion";
 import Dashboard from "./vistas/Dashboard";
 import Facultades from "./vistas/Facultades";
 import Carreras from "./vistas/Carreras";
@@ -9,6 +10,7 @@ import Materias from "./vistas/Materias";
 import Matricula from "./vistas/Matricula";
 import Notas from "./vistas/Notas";
 import Recibos from "./vistas/Recibos";
+import Login from "./vistas/Login";
 
 const VISTAS = {
   inicio: Dashboard,
@@ -21,34 +23,109 @@ const VISTAS = {
   recibos: Recibos
 };
 
-function rutaActual() {
-  const clave = window.location.hash.replace(/^#\/?/, "").split("?")[0];
-  return VISTAS[clave] ? clave : "inicio";
+function rutaDelHash() {
+  return window.location.hash.replace(/^#\/?/, "").split("?")[0];
 }
 
-export default function App() {
-  const [ruta, setRuta] = useState(rutaActual);
+function rutaValida(permitidas, predeterminada) {
+  const clave = rutaDelHash();
+  return permitidas.includes(clave) ? clave : predeterminada;
+}
+
+function Portal() {
+  const { sesion, esAdmin, validando } = useSesion();
+
+  if (!sesion) {
+    return <Login />;
+  }
+
+  if (validando) {
+    return (
+      <div className="acceso-carga" role="status">
+        <span className="girador" aria-hidden="true" />
+        <p>Verificando tu sesión…</p>
+      </div>
+    );
+  }
+
+  const modulos = MODULOS.filter((modulo) => esAdmin || !modulo.soloAdmin).map((modulo) =>
+    modulo.clave === "matricula"
+      ? {
+          ...modulo,
+          etiqueta: esAdmin ? "Matrículas" : "Mi matrícula",
+          descripcion: esAdmin ? "Consulta por estudiante" : "Inscripción de materias"
+        }
+      : modulo
+  );
+  const permitidas = modulos.map((modulo) => modulo.clave);
+  const predeterminada = permitidas.includes("inicio") ? "inicio" : permitidas[0];
+
+  return (
+    <ProveedorDatos sesion={sesion}>
+      <PortalAutenticado
+        modulos={modulos}
+        permitidas={permitidas}
+        predeterminada={predeterminada}
+      />
+    </ProveedorDatos>
+  );
+}
+
+function PortalAutenticado({ modulos, permitidas, predeterminada }) {
+  const { sesion, usuario, esAdmin, cerrar } = useSesion();
+  const [ruta, setRuta] = useState(() => rutaValida(permitidas, predeterminada));
 
   useEffect(() => {
     const alCambiar = () => {
-      setRuta(rutaActual());
+      setRuta(rutaValida(permitidas, predeterminada));
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
     window.addEventListener("hashchange", alCambiar);
     return () => window.removeEventListener("hashchange", alCambiar);
-  }, []);
+  }, [permitidas.join(","), predeterminada]);
 
   useEffect(() => {
-    document.title = `${MODULOS.find((m) => m.clave === ruta)?.etiqueta || "Portal"} · Portal de Gestión Universitaria`;
-  }, [ruta]);
+    if (!permitidas.includes(rutaDelHash())) {
+      window.history.replaceState(null, "", `#/${predeterminada}`);
+      if (ruta !== predeterminada) setRuta(predeterminada);
+    }
+  }, [ruta, permitidas.join(","), predeterminada]);
 
-  const Vista = VISTAS[ruta] || Dashboard;
+  useEffect(() => {
+    document.title = `${modulos.find((modulo) => modulo.clave === ruta)?.etiqueta || "Portal"} · Portal de Gestión Universitaria`;
+  }, [ruta, modulos]);
+
+  useEffect(() => {
+    if (!sesion) return undefined;
+    const aviso = (evento) => {
+      const mensaje = "Tu sesión sigue abierta. Si cierras el navegador, deberás iniciar sesión de nuevo.";
+      evento.preventDefault();
+      evento.returnValue = mensaje;
+      return mensaje;
+    };
+    window.addEventListener("beforeunload", aviso);
+    return () => window.removeEventListener("beforeunload", aviso);
+  }, [sesion]);
+
+  const Vista = VISTAS[ruta] || VISTAS[predeterminada];
 
   return (
-    <ProveedorDatos>
-      <Layout ruta={ruta}>
-        <Vista key={ruta} />
-      </Layout>
-    </ProveedorDatos>
+    <Layout
+      ruta={ruta}
+      modulos={modulos}
+      usuario={usuario}
+      esAdmin={esAdmin}
+      onSalir={cerrar}
+    >
+      <Vista key={ruta} />
+    </Layout>
+  );
+}
+
+export default function App() {
+  return (
+    <ProveedorSesion>
+      <Portal />
+    </ProveedorSesion>
   );
 }

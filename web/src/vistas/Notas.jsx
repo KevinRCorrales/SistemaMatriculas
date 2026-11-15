@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useDatos } from "../contexto";
 import { aNumero, validarNotas } from "../validaciones";
 import {
   Alerta,
   Boton,
+  Cargando,
   Entrada,
   Etiqueta,
   Seleccion,
@@ -13,9 +14,11 @@ import {
 } from "../componentes/ui";
 
 export default function Notas() {
-  const { estudiantes, periodo: periodoActual } = useDatos();
+  const { estudiantes, periodo: periodoActual, esAdmin } = useDatos();
 
-  const [identificacion, setIdentificacion] = useState("");
+  const [identificacion, setIdentificacion] = useState(() =>
+    esAdmin ? "" : estudiantes[0]?.identificacion || ""
+  );
   const [matriculas, setMatriculas] = useState([]);
   const [periodoFiltro, setPeriodoFiltro] = useState("");
   const [cargando, setCargando] = useState(false);
@@ -25,6 +28,14 @@ export default function Notas() {
   const [guardando, setGuardando] = useState(false);
   const [exito, setExito] = useState("");
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!esAdmin && identificacion) {
+      cargarMatriculas(identificacion);
+    }
+    // Solo se ejecuta al montar la vista del estudiante.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function cargarMatriculas(documento) {
     setIdentificacion(documento);
@@ -127,7 +138,7 @@ export default function Notas() {
     }
   }
 
-  if (!estudiantes.length) {
+  if (esAdmin && !estudiantes.length) {
     return (
       <div className="vista">
         <header className="vista__encabezado">
@@ -146,6 +157,123 @@ export default function Notas() {
             Las notas se registran sobre una materia matriculada.
           </Vacio>
         </Tarjeta>
+      </div>
+    );
+  }
+
+  if (!esAdmin) {
+    const conNota = matriculas.filter((matricula) => matricula.nota);
+    const aprobadas = conNota.filter((matricula) => matricula.nota.promedio >= 3).length;
+    const promedioGeneral = conNota.length
+      ? conNota.reduce((total, matricula) => total + matricula.nota.promedio, 0) / conNota.length
+      : null;
+
+    return (
+      <div className="vista">
+        <header className="vista__encabezado animar-arriba">
+          <p className="vista__modulo">Mis calificaciones</p>
+          <h2>Mis notas</h2>
+          <p>
+            Consulta las calificaciones que la universidad ha cargado en tus materias. Puedes
+            filtrar por periodo para revisar cada semestre por separado.
+          </p>
+        </header>
+
+        <div className="rejilla rejilla--dos">
+          <div className="columna-principal">
+            <Tarjeta
+              titulo="Periodo"
+              descripcion="Elige el periodo que quieres consultar."
+              className="animar-arriba"
+            >
+              <Seleccion
+                etiqueta="Periodo"
+                id="notas-periodo-estudiante"
+                value={periodoFiltro}
+                disabled={!matriculas.length}
+                onChange={(evento) => cambiarPeriodo(evento.target.value)}
+              >
+                <option value="">Todos los periodos</option>
+                {periodos.map((periodo) => (
+                  <option key={periodo} value={periodo}>
+                    {periodo}
+                  </option>
+                ))}
+              </Seleccion>
+            </Tarjeta>
+
+            {error && <Alerta tipo="error">{error.message}</Alerta>}
+            {cargando && <Cargando texto="Consultando tus materias…" />}
+
+            {!cargando && (
+              <Tarjeta
+                titulo="Materias"
+                descripcion={
+                  periodoFiltro ? `Materias del periodo ${periodoFiltro}.` : "Todos tus periodos."
+                }
+                acciones={<Etiqueta>{visibles.length}</Etiqueta>}
+                className="animar-arriba"
+              >
+                {visibles.length ? (
+                  <ul className="lista-notas">
+                    {visibles.map((matricula) => (
+                      <li key={matricula.idMatricula}>
+                        <div className="opcion-nota opcion-nota--lectura">
+                          <span>
+                            <strong>{matricula.nombreMateria}</strong>
+                            <span>
+                              {matricula.periodo} · {matricula.creditos} créditos ·{" "}
+                              {matricula.horario}
+                            </span>
+                          </span>
+                          {matricula.nota ? (
+                            <Etiqueta tono={matricula.nota.promedio >= 3 ? "verde" : "rojo"}>
+                              {matricula.nota.promedio.toFixed(2)}
+                            </Etiqueta>
+                          ) : (
+                            <Etiqueta tono="ambar">Pendiente</Etiqueta>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : matriculas.length ? (
+                  <Vacio titulo={`Sin matrículas en ${periodoFiltro}`}>
+                    Elige otro periodo o consulta «Todos los periodos».
+                  </Vacio>
+                ) : (
+                  <Vacio titulo="Aún no tienes materias matriculadas">
+                    Cuando realices tu matrícula, aquí verás tus notas.
+                  </Vacio>
+                )}
+              </Tarjeta>
+            )}
+          </div>
+
+          <aside className="columna-resumen">
+            <div className="tarjeta resumen-matricula animar-arriba">
+              <h3>Resumen académico</h3>
+              <dl className="resumen-cifras">
+                <div>
+                  <dt>Materias con nota</dt>
+                  <dd>{conNota.length}</dd>
+                </div>
+                <div>
+                  <dt>Aprobadas</dt>
+                  <dd>{aprobadas}</dd>
+                </div>
+                <div className="resumen-cifras__total">
+                  <dt>Promedio general</dt>
+                  <dd>{promedioGeneral === null ? "—" : promedioGeneral.toFixed(2)}</dd>
+                </div>
+              </dl>
+              <Alerta tipo="info">
+                Las notas son registradas por la administración de la universidad. Si encuentras
+                una inconsistencia, comunícate con la Secretaría Académica.
+              </Alerta>
+            </div>
+          </aside>
+        </div>
       </div>
     );
   }

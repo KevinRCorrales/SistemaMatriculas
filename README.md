@@ -9,10 +9,13 @@ Navegador  ──►  FastAPI (servidor.py)  ──►  MariaDB (universidad)
                  └── sirve web/dist en /      └── esquema universidad.sql
 ```
 
-La pantalla de bienvenida es un **dashboard institucional** con indicadores calculados en vivo
-(recaudación estimada en COP, ocupación de cupos, aprobación y promedio general, demanda por
-facultad y por materia, historial por periodo), además de los módulos de facultades, carreras,
-estudiantes, materias, matrícula, notas y recibos.
+El portal comienza en una **pantalla de acceso** con dos tipos de usuario, sin registro público:
+los **estudiantes** entran con su correo y su documento, y los **administrativos** con una
+contraseña única guardada en `.env`. Los estudiantes solo ven su matrícula, sus notas y sus
+recibos; los administrativos ven además el **dashboard institucional** con indicadores calculados
+en vivo (recaudación estimada en COP, ocupación de cupos, aprobación y promedio general, demanda
+por facultad y por materia, historial por periodo) y gestionan facultades, carreras, estudiantes,
+materias, notas, consulta de matrículas y recibos.
 
 ## Requisitos
 
@@ -47,17 +50,19 @@ No se requieren migraciones: la API no crea ni modifica tablas.
 
 ## Configuración (`.env`)
 
-| Variable              | Obligatoria | Descripción                                                          |
-| --------------------- | ----------- | --------------------------------------------------------------------- |
-| `DATABASE_USER`     | Sí         | Usuario de MariaDB.                                                   |
-| `DATABASE_PASSWORD` | Sí         | Contraseña del usuario.                                              |
-| `DATABASE_NAME`     | Sí         | Base de datos (por defecto `universidad`).                          |
-| `DATABASE_HOST`     | No          | Host del servidor (por defecto `localhost`).                        |
-| `DATABASE_PORT`     | No          | Puerto (por defecto `3306`).                                        |
-| `API_HOST`          | No          | Host de FastAPI (por defecto `127.0.0.1`).                          |
-| `API_PORT`          | No          | Puerto de FastAPI (por defecto `3000`).                             |
-| `API_RELOAD`        | No          | `true` para recarga automática en desarrollo.                      |
-| `FRONTEND_ORIGIN`   | No          | Origen extra permitido por CORS (el portal servido usa mismo origen). |
+| Variable              | Obligatoria | Descripción                                                              |
+| --------------------- | ----------- | ------------------------------------------------------------------------- |
+| `DATABASE_USER`     | Sí         | Usuario de MariaDB.                                                       |
+| `DATABASE_PASSWORD` | Sí         | Contraseña del usuario.                                                  |
+| `DATABASE_NAME`     | Sí         | Base de datos (por defecto `universidad`).                              |
+| `DATABASE_HOST`     | No          | Host del servidor (por defecto `localhost`).                            |
+| `DATABASE_PORT`     | No          | Puerto (por defecto `3306`).                                            |
+| `API_HOST`          | No          | Host de FastAPI (por defecto `127.0.0.1`).                              |
+| `API_PORT`          | No          | Puerto de FastAPI (por defecto `3000`).                                 |
+| `API_RELOAD`        | No          | `true` para recarga automática en desarrollo.                          |
+| `FRONTEND_ORIGIN`   | No          | Origen extra permitido por CORS (el portal servido usa mismo origen).     |
+| `ADMIN_PASSWORD`    | Sí         | Contraseña única con la que entran los administrativos.                 |
+| `SESSION_SECRET`    | Recomendado | Secreto para firmar los tokens; si falta se deriva de `ADMIN_PASSWORD`. |
 
 También se aceptan los nombres históricos de `sistema.py` (`USER`, `PASSWORD`, `DATABASE`,
 `HOST`, `PORT`). El archivo `.env` está ignorado por git; `.env.example` no contiene credenciales.
@@ -91,7 +96,11 @@ Para trabajar en el frontend con recarga en caliente, deja el backend en el puer
 
 | Método | Ruta                                                                      | Descripción                                                                                                                                  |
 | ------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET     | `/api/salud`                                                            | Estado del servicio y de la conexión a MariaDB.                                                                                              |
+| GET     | `/api/salud`                                                            | Estado del servicio y de la conexión a MariaDB (público).                                                                                   |
+| POST    | `/api/auth/estudiante`                                                  | Acceso del estudiante (`{ "correo", "identificacion" }`). Devuelve token y perfil.                                                          |
+| POST    | `/api/auth/administrativo`                                              | Acceso administrativo (`{ "clave" }`). Devuelve token.                                                                                      |
+| GET     | `/api/auth/sesion`                                                      | Perfil de la sesión actual (requiere token).                                                                                                 |
+| POST    | `/api/auth/salir`                                                       | Revoca el token actual.                                                                                                                       |
 | GET     | `/api/dashboard?periodo=AAAA-N`                                         | KPIs del periodo (recaudación, ocupación, aprobación, promedios), demanda por facultad y materia e histórico.                             |
 | GET     | `/api/facultades`                                                       | Lista de facultades.                                                                                                                          |
 | POST    | `/api/facultades`                                                       | Crea una facultad (`{ "nombre" }`).                                                                                                         |
@@ -109,9 +118,29 @@ Para trabajar en el frontend con recarga en caliente, deja el backend en el puer
 | POST    | `/api/notas`                                                            | Registra las tres notas (`{ "idMatricula", "nota1", "nota2", "nota3" }`).                                                                   |
 | GET     | `/api/recibos?identificacion=...&periodo=...`                           | Datos del recibo de matrícula (estudiante, materias, total a pagar).                                                                         |
 
-Los errores siempre devuelven `{ "mensaje": "...", "campo": "..." }` con un código coherente:
-`422` para datos mal formados, `400` para reglas de negocio, `404` si no existe el recurso,
-`409`/`503` para conflictos de base de datos y `503` si no hay conexión.
+Todas las rutas salvo `/api/salud` y las dos de acceso exigen la cabecera
+`Authorization: Bearer <token>`. Los errores siempre devuelven `{ "mensaje": "...", "campo": "..." }`
+con un código coherente: `401` si falta la sesión o no es válida, `403` si el rol no permite la
+operación, `422` para datos mal formados, `400` para reglas de negocio, `404` si no existe el
+recurso, `429` al superar el límite de intentos de acceso, `409`/`503` para conflictos de base de
+datos y `503` si no hay conexión.
+
+## Acceso por roles
+
+- **Estudiante**: correo institucional + documento registrado en `ESTUDIANTES`. Solo puede
+  matricularse a sí mismo, consultar sus matrículas, ver sus notas y generar sus recibos. La API
+  compara la identificación de la ruta con la del token y rechaza (`403`) cualquier consulta ajena.
+- **Administrativo**: contraseña única en `ADMIN_PASSWORD`. Gestiona facultades, carreras,
+  estudiantes, materias y notas; consulta el dashboard, las matrículas de cualquier estudiante por
+  periodo y sus recibos. No puede registrar matrículas: esa operación es exclusiva del estudiante.
+- **Cierre de sesión**: el botón «Cerrar sesión» revoca el token en el backend y borra la sesión
+  local. Mientras haya una sesión abierta, el navegador muestra su aviso estándar antes de cerrar
+  la pestaña o el navegador (`beforeunload`).
+- **Seguridad**: tokens firmados con HMAC-SHA256 y vigencia de 8 horas; comparaciones de credenciales
+  con `hmac.compare_digest` sobre huellas de longitud fija (sin `if` que filtre tiempos ni cuentas
+  existentes); límite de 5 intentos fallidos por minuto e IP; mensajes de error genéricos; el menú y
+  las rutas del frontend se filtran por rol, y la API vuelve a comprobar el rol en cada petición.
+  La contraseña administrativa nunca se envía al navegador.
 
 ## Reglas de negocio de la plataforma
 
@@ -155,8 +184,10 @@ hatch run python -m pytest -q
 servicio del portal compilado desde `/` (se omite si no existe `web/dist`), CORS, validaciones puras
 (periodo, documento, correo, notas, límites de materias, horario de 40 caracteres y su conversión a
 mayúsculas), el tope acumulado de créditos por periodo, detección de choque de horarios, facultades
-de servicio general, formato de errores `422`/`400`/`404` y la semántica commit/rollback de
-`transaccion()` con una conexión falsa.
+de servicio general, formato de errores `422`/`400`/`404`, la semántica commit/rollback de
+`transaccion()` con una conexión falsa y el control de acceso (401 sin sesión, 403 por rol o por
+consultar a otro estudiante, firma y expiración de tokens, revocación al salir, validación de la
+contraseña administrativa y bloqueo tras cinco intentos fallidos).
 
 El frontend se valida compilándolo con `cd web && npm run build` (falla ante imports o JSX
 inválidos). La verificación funcional contra MariaDB se hizo con la API en marcha: matrícula de
@@ -174,8 +205,9 @@ test_servidor.py       Pruebas automatizadas (pytest)
 universidad.sql        Esquema de la base (referencia, sin cambios)
 sistema.py             Aplicación de escritorio original (intacta)
 web/                   Portal React (Vite): package.json, index.html, src/ y public/
-web/src/vistas/        Dashboard y módulos (facultades, carreras, estudiantes, materias, matrícula, notas, recibos)
+web/src/vistas/        Login, Dashboard y módulos (facultades, carreras, estudiantes, materias, matrícula, notas, recibos)
 web/src/componentes/   Componentes reutilizables (UI y layout) y animaciones compartidas
+web/src/sesion.jsx     Contexto de sesión: token, perfil, expiración y cierre de sesión
 web/legacy/            CSS/JS de la versión anterior del portal (referencia, no se sirve)
 requirements.txt       Dependencias de ejecución
 requirements-dev.txt   Dependencias de desarrollo y pruebas

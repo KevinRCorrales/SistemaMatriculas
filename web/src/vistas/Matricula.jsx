@@ -16,9 +16,11 @@ import {
 } from "../componentes/ui";
 
 export default function Matricula() {
-  const { estudiantes, carreras, facultades, periodo } = useDatos();
+  const { estudiantes, carreras, facultades, periodo, esAdmin } = useDatos();
 
-  const [identificacion, setIdentificacion] = useState("");
+  const [identificacion, setIdentificacion] = useState(() =>
+    esAdmin ? "" : estudiantes[0]?.identificacion || ""
+  );
   const [disponibles, setDisponibles] = useState([]);
   const [matriculadas, setMatriculadas] = useState([]);
   const [seleccion, setSeleccion] = useState([]);
@@ -34,6 +36,11 @@ export default function Matricula() {
   );
   const carrera = carreras.find((item) => Number(item.id) === Number(estudiante?.idCarrera));
   const facultad = facultades.find((item) => Number(item.id) === Number(carrera?.idFacultad));
+  const nombreCarrera = esAdmin ? carrera?.nombre : estudiante?.carrera;
+  const nombreFacultad = esAdmin ? facultad?.nombre : estudiante?.facultad;
+  const idFacultadEstudiante = esAdmin
+    ? carrera?.idFacultad
+    : estudiante?.idFacultad;
 
   useEffect(() => {
     setSeleccion([]);
@@ -89,10 +96,10 @@ export default function Matricula() {
   const grupos = [
     {
       clave: "facultad",
-      titulo: `Materias de ${facultad?.nombre || "la facultad"}`,
+      titulo: `Materias de ${nombreFacultad || "la facultad"}`,
       descripcion: `Oferta del periodo ${periodo} para la carrera del estudiante.`,
       materias: seleccionables.filter(
-        (materia) => Number(materia.idFacultad) === Number(carrera?.idFacultad)
+        (materia) => Number(materia.idFacultad) === Number(idFacultadEstudiante)
       )
     },
     {
@@ -102,7 +109,7 @@ export default function Matricula() {
       materias: seleccionables.filter(
         (materia) =>
           materia.esServicioGeneral &&
-          Number(materia.idFacultad) !== Number(carrera?.idFacultad)
+          Number(materia.idFacultad) !== Number(idFacultadEstudiante)
       )
     }
   ].filter((grupo) => grupo.materias.length);
@@ -170,25 +177,145 @@ export default function Matricula() {
     }
   }
 
-  if (!estudiantes.length) {
+  if (esAdmin) {
+    const totalCreditos = matriculadas.reduce(
+      (total, matricula) => total + Number(matricula.creditos || 0),
+      0
+    );
+    const conNota = matriculadas.filter((matricula) => matricula.nota).length;
+
     return (
       <div className="vista">
-        <header className="vista__encabezado">
+        <header className="vista__encabezado animar-arriba">
           <p className="vista__modulo">Módulo 5</p>
-          <h2>Matrícula</h2>
+          <h2>Matrículas</h2>
+          <p>
+            Consulta las materias que cada estudiante inscribió en el periodo {periodo}. La
+            inscripción la realiza el propio estudiante desde su cuenta.
+          </p>
         </header>
-        <Tarjeta>
-          <Vacio
-            titulo="Primero registra estudiantes"
-            accion={
-              <a className="boton boton--primario" href="#/estudiantes">
-                Ir a estudiantes
-              </a>
-            }
-          >
-            Necesitas al menos un estudiante y materias del periodo para matricular.
-          </Vacio>
-        </Tarjeta>
+
+        <div className="rejilla rejilla--matricula">
+          <div className="columna-principal">
+            <Tarjeta className="animar-arriba">
+              <div className="selector-estudiante">
+                <Seleccion
+                  etiqueta="Estudiante"
+                  id="matricula-estudiante"
+                  value={identificacion}
+                  onChange={(evento) => setIdentificacion(evento.target.value)}
+                >
+                  <option value="">Selecciona un estudiante</option>
+                  {estudiantes.map((item) => (
+                    <option key={item.identificacion} value={item.identificacion}>
+                      {item.identificacion} · {nombreCompleto(item)}
+                    </option>
+                  ))}
+                </Seleccion>
+                <Etiqueta tono="azul">Periodo {periodo}</Etiqueta>
+              </div>
+
+              {estudiante && (
+                <div className="ficha-estudiante animar-arriba">
+                  <span className="avatar">{iniciales(estudiante)}</span>
+                  <div>
+                    <strong>{nombreCompleto(estudiante)}</strong>
+                    <span>Documento {estudiante.identificacion}</span>
+                  </div>
+                  <div className="ficha-estudiante__meta">
+                    <span>{nombreCarrera || "Carrera no disponible"}</span>
+                    <span>{nombreFacultad || "Facultad no disponible"}</span>
+                  </div>
+                </div>
+              )}
+            </Tarjeta>
+
+            {errorCarga && <Alerta tipo="error">{errorCarga.message}</Alerta>}
+            {cargando && <Cargando texto="Consultando matrículas del periodo…" />}
+
+            {!identificacion && (
+              <Tarjeta className="animar-arriba">
+                <Vacio titulo="Consulta la matrícula de un estudiante">
+                  Elige un estudiante para ver las materias que inscribió en {periodo}.
+                </Vacio>
+              </Tarjeta>
+            )}
+
+            {identificacion && !cargando && (
+              matriculadas.length ? (
+                <Tarjeta
+                  titulo="Matrículas del periodo"
+                  descripcion="Materias inscritas y estado de sus notas."
+                  acciones={<Etiqueta tono="verde">{totalCreditos} créditos</Etiqueta>}
+                  className="animar-arriba"
+                >
+                  <ul className="materias-inscritas">
+                    {matriculadas.map((matricula) => (
+                      <li key={matricula.idMatricula}>
+                        <div>
+                          <strong>{matricula.nombreMateria}</strong>
+                          <span>
+                            {matricula.creditos} créditos · {matricula.horario}
+                          </span>
+                        </div>
+                        <Etiqueta tono={matricula.nota ? "verde" : "azul"}>
+                          {matricula.nota
+                            ? `Promedio ${matricula.nota.promedio.toFixed(2)}`
+                            : "Sin nota"}
+                        </Etiqueta>
+                      </li>
+                    ))}
+                  </ul>
+                </Tarjeta>
+              ) : (
+                <Tarjeta className="animar-arriba">
+                  <Vacio titulo={`Sin matrículas en ${periodo}`}>
+                    El estudiante no tiene materias inscritas en este periodo.
+                  </Vacio>
+                </Tarjeta>
+              )
+            )}
+          </div>
+
+          <aside className="columna-resumen">
+            <div className="tarjeta resumen-matricula animar-arriba">
+              <h3>Resumen de la consulta</h3>
+              {estudiante ? (
+                <>
+                  <dl className="resumen-cifras">
+                    <div>
+                      <dt>Materias</dt>
+                      <dd>{formatoNumero(matriculadas.length)}</dd>
+                    </div>
+                    <div>
+                      <dt>Créditos</dt>
+                      <dd>{formatoNumero(totalCreditos)}</dd>
+                    </div>
+                    <div className="resumen-cifras__total">
+                      <dt>Tope del periodo</dt>
+                      <dd>
+                        {formatoNumero(totalCreditos)} / {MAX_CREDITOS}
+                      </dd>
+                    </div>
+                  </dl>
+                  <Barra
+                    valor={(totalCreditos / MAX_CREDITOS) * 100}
+                    etiqueta="Créditos matriculados en el periodo"
+                  />
+                  <p className="texto-tenue">
+                    {conNota} de {matriculadas.length} materias con nota registrada. Las notas se
+                    cargan desde el módulo Notas.
+                  </p>
+                  <a className="boton boton--secundario" href="#/recibos">
+                    Consultar recibos
+                  </a>
+                </>
+              ) : (
+                <p className="texto-tenue">Elige un estudiante para ver su matrícula.</p>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
     );
   }
@@ -196,11 +323,11 @@ export default function Matricula() {
   return (
     <div className="vista">
       <header className="vista__encabezado animar-arriba">
-        <p className="vista__modulo">Módulo 5</p>
-        <h2>Matrícula</h2>
+        <p className="vista__modulo">{esAdmin ? "Módulo 5" : "Tu matrícula"}</p>
+        <h2>{esAdmin ? "Matrícula" : "Matricula tus materias"}</h2>
         <p>
-          El tope de {MAX_CREDITOS} créditos es por estudiante y periodo: si ya matriculó materias en{" "}
-          {periodo}, solo podrás agregar las que quepan en el saldo restante.
+          El tope de {MAX_CREDITOS} créditos es por estudiante y periodo: si ya matriculaste materias
+          en {periodo}, solo puedes agregar las que quepan en el saldo restante.
         </p>
       </header>
 
@@ -208,19 +335,23 @@ export default function Matricula() {
         <div className="columna-principal">
           <Tarjeta className="animar-arriba">
             <div className="selector-estudiante">
-              <Seleccion
-                etiqueta="Estudiante"
-                id="matricula-estudiante"
-                value={identificacion}
-                onChange={(evento) => setIdentificacion(evento.target.value)}
-              >
-                <option value="">Selecciona un estudiante</option>
-                {estudiantes.map((item) => (
-                  <option key={item.identificacion} value={item.identificacion}>
-                    {item.identificacion} · {nombreCompleto(item)}
-                  </option>
-                ))}
-              </Seleccion>
+              {esAdmin ? (
+                <Seleccion
+                  etiqueta="Estudiante"
+                  id="matricula-estudiante"
+                  value={identificacion}
+                  onChange={(evento) => setIdentificacion(evento.target.value)}
+                >
+                  <option value="">Selecciona un estudiante</option>
+                  {estudiantes.map((item) => (
+                    <option key={item.identificacion} value={item.identificacion}>
+                      {item.identificacion} · {nombreCompleto(item)}
+                    </option>
+                  ))}
+                </Seleccion>
+              ) : (
+                <strong className="selector-estudiante__titulo">Tu inscripción del periodo</strong>
+              )}
               <Etiqueta tono="azul">Periodo {periodo}</Etiqueta>
             </div>
 
@@ -232,8 +363,8 @@ export default function Matricula() {
                   <span>Documento {estudiante.identificacion}</span>
                 </div>
                 <div className="ficha-estudiante__meta">
-                  <span>{carrera?.nombre || "Carrera no disponible"}</span>
-                  <span>{facultad?.nombre || "Facultad no disponible"}</span>
+                  <span>{nombreCarrera || "Carrera no disponible"}</span>
+                  <span>{nombreFacultad || "Facultad no disponible"}</span>
                 </div>
                 <div className="ficha-estudiante__creditos">
                   <span>Créditos del periodo</span>
@@ -249,7 +380,7 @@ export default function Matricula() {
 
           {cargando && <Cargando texto="Consultando materias y matrículas del periodo…" />}
 
-          {!identificacion && (
+          {!identificacion && esAdmin && (
             <Tarjeta className="animar-arriba">
               <Vacio titulo="Selecciona un estudiante para comenzar">
                 Verás las materias de su facultad y las de servicio general disponibles en {periodo}.

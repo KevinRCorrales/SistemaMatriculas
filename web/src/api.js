@@ -1,6 +1,16 @@
 /* Cliente de la API. En desarrollo Vite hace proxy de /api al backend. */
 const BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
 
+let tokenActual = null;
+
+export function establecerToken(token) {
+  tokenActual = token || null;
+}
+
+export function obtenerToken() {
+  return tokenActual;
+}
+
 export class ErrorApi extends Error {
   constructor(mensaje, campo, estado) {
     super(mensaje);
@@ -16,10 +26,15 @@ const numero = (valor) => {
 };
 
 async function peticion(ruta, opciones = {}) {
+  const cabeceras = { "Content-Type": "application/json", ...(opciones.headers || {}) };
+  if (tokenActual) {
+    cabeceras.Authorization = `Bearer ${tokenActual}`;
+  }
+
   let respuesta;
   try {
     respuesta = await fetch(`${BASE}${ruta}`, {
-      headers: { "Content-Type": "application/json", ...(opciones.headers || {}) },
+      headers: cabeceras,
       ...opciones
     });
   } catch {
@@ -44,6 +59,10 @@ async function peticion(ruta, opciones = {}) {
     }
   }
 
+  if (respuesta.status === 401 && !ruta.startsWith("/auth")) {
+    window.dispatchEvent(new CustomEvent("portal:sesion-expirada"));
+  }
+
   if (!respuesta.ok) {
     throw new ErrorApi(
       (cuerpo && cuerpo.mensaje) ||
@@ -58,6 +77,22 @@ async function peticion(ruta, opciones = {}) {
 
 export const api = {
   verificarSalud: () => peticion("/salud"),
+
+  accederEstudiante: (datos) =>
+    peticion("/auth/estudiante", {
+      method: "POST",
+      body: JSON.stringify({ correo: datos.correo, identificacion: datos.identificacion })
+    }),
+
+  accederAdministrativo: (datos) =>
+    peticion("/auth/administrativo", {
+      method: "POST",
+      body: JSON.stringify({ clave: datos.clave })
+    }),
+
+  obtenerSesion: () => peticion("/auth/sesion"),
+
+  cerrarSesion: () => peticion("/auth/salir", { method: "POST" }),
   obtenerDashboard: (periodo) =>
     peticion(`/dashboard${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ""}`),
 

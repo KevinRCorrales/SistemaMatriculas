@@ -14,6 +14,7 @@ porque necesitan una instancia local con el esquema `universidad.sql`.
 
 from __future__ import annotations
 
+import time
 from datetime import date
 
 import pytest
@@ -25,6 +26,25 @@ import servidor
 @pytest.fixture(scope="module")
 def cliente() -> TestClient:
     return TestClient(servidor.app)
+
+
+@pytest.fixture(autouse=True)
+def limpiar_estado_de_acceso():
+    servidor._intentos_acceso.clear()
+    servidor._tokens_revocados.clear()
+    yield
+    servidor._intentos_acceso.clear()
+    servidor._tokens_revocados.clear()
+
+
+@pytest.fixture
+def cabecera_admin() -> dict[str, str]:
+    return {"Authorization": f"Bearer {servidor.crear_token('administrativo')}"}
+
+
+@pytest.fixture
+def cabecera_estudiante() -> dict[str, str]:
+    return {"Authorization": f"Bearer {servidor.crear_token('estudiante', '1020304056')}"}
 
 
 # ---------------------------------------------------------------------------
@@ -292,9 +312,12 @@ def test_generar_id_matricula_conserva_el_sufijo_de_fecha() -> None:
 # ---------------------------------------------------------------------------
 # Errores de la API (sin tocar la base de datos)
 # ---------------------------------------------------------------------------
-def test_error_de_negocio_devuelve_mensaje_y_campo(cliente: TestClient) -> None:
+def test_error_de_negocio_devuelve_mensaje_y_campo(
+    cliente: TestClient, cabecera_admin: dict[str, str]
+) -> None:
     respuesta = cliente.post(
         "/api/materias",
+        headers=cabecera_admin,
         json={
             "id": 100000,
             "nombre": "Bases de Datos",
@@ -311,26 +334,34 @@ def test_error_de_negocio_devuelve_mensaje_y_campo(cliente: TestClient) -> None:
     assert "100000" in datos["mensaje"]
 
 
-def test_validacion_de_esquema_devuelve_422_con_campo(cliente: TestClient) -> None:
-    respuesta = cliente.post("/api/facultades", json={})
+def test_validacion_de_esquema_devuelve_422_con_campo(
+    cliente: TestClient, cabecera_admin: dict[str, str]
+) -> None:
+    respuesta = cliente.post("/api/facultades", headers=cabecera_admin, json={})
     assert respuesta.status_code == 422
     datos = respuesta.json()
     assert datos["campo"] == "nombre"
     assert datos["mensaje"]
 
 
-def test_matricula_sin_materias_no_llega_a_la_base_de_datos(cliente: TestClient) -> None:
+def test_matricula_sin_materias_no_llega_a_la_base_de_datos(
+    cliente: TestClient, cabecera_estudiante: dict[str, str]
+) -> None:
     respuesta = cliente.post(
         "/api/matriculas",
+        headers=cabecera_estudiante,
         json={"identificacion": "1020304056", "periodo": "2026-2", "codigosMaterias": []},
     )
     assert respuesta.status_code == 400
     assert respuesta.json()["campo"] == "materias"
 
 
-def test_nota_cero_se_rechaza_antes_de_escribir(cliente: TestClient) -> None:
+def test_nota_cero_se_rechaza_antes_de_escribir(
+    cliente: TestClient, cabecera_admin: dict[str, str]
+) -> None:
     respuesta = cliente.post(
         "/api/notas",
+        headers=cabecera_admin,
         json={"idMatricula": 1, "nota1": 0, "nota2": 3.5, "nota3": 4.0},
     )
     assert respuesta.status_code == 400
@@ -339,6 +370,111 @@ def test_nota_cero_se_rechaza_antes_de_escribir(cliente: TestClient) -> None:
 
 def test_ruta_inexistente_devuelve_404(cliente: TestClient) -> None:
     assert cliente.get("/api/no-existe").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Autenticación y autorización
+# ---------------------------------------------------------------------------
+def test_las_rutas_privadas_exigen_sesion(cliente: TestClient) -> None:
+    for ruta in ("/api/dashboard", "/api/facultades", "/api/estudiantes"):
+        respuesta = cliente.get(ruta)
+        assert respuesta.status_code == 401
+        assert respuesta.json()["campo"] == "sesion"
+
+
+def test_el_estudiante_no_entra_al_panel_ni_a_los_catalogos(
+    cliente: TestClient, cabecera_estudiante: dict[str, str]
+) -> None:
+    for ruta in ("/api/dashboard", "/api/facultades", "/api/estudiantes", "/api/materias"):
+        respuesta = cliente.get(ruta, headers=cabecera_estudiante)
+        assert respuesta.status_code == 403
+        assert respuesta.json()["campo"] == "sesion"
+
+
+def test_el_estudiante_solo_consulta_su_propia_informacion(
+    cliente: TestClient, cabecera_estudiante: dict[str, str]
+) -> None:
+    respuesta = cliente.get("/api/estudiantes/999999", headers=cabecera_estudiante)
+    assert respuesta.status_code == 403
+
+    recibos = cliente.get(
+        "/api/recibos?identificacion=999999&periodo=2026-2",
+        headers=cabecera_estudiante,
+    )
+    assert recibos.status_code == 403
+
+
+def test_el_administrativo_no_hace_matriculas(
+    cliente: TestClient, cabecera_admin: dict[str, str]
+) -> None:
+    respuesta = cliente.post(
+        "/api/matriculas",
+        headers=cabecera_admin,
+        json={"identificacion": "1020304056", "periodo": "2026-2", "codigosMaterias": []},
+    )
+    assert respuesta.status_code == 403
+
+
+def test_token_firmado_y_manipulado() -> None:
+    token = servidor.crear_token("administrativo")
+    datos = servidor.verificar_token(token)
+    assert datos["rol"] == "administrativo"
+    assert servidor.verificar_token(token + "0") is None
+    assert servidor.verificar_token("sin-punto") is None
+    assert servidor.verificar_token("") is None
+
+
+def test_token_expirado_se_rechaza(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = servidor.crear_token("administrativo")
+    real = time.time
+    monkeypatch.setattr(servidor.time, "time", lambda: real() + servidor.DURACION_SESION_SEGUNDOS + 1)
+    assert servidor.verificar_token(token) is None
+
+
+def test_cerrar_sesion_revoca_el_token(
+    cliente: TestClient, cabecera_admin: dict[str, str]
+) -> None:
+    assert cliente.get("/api/auth/sesion", headers=cabecera_admin).status_code == 200
+    assert cliente.post("/api/auth/salir", headers=cabecera_admin).status_code == 200
+    assert cliente.get("/api/auth/sesion", headers=cabecera_admin).status_code == 401
+
+
+def test_acceso_administrativo_valida_la_clave(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = servidor.configuracion
+    monkeypatch.setattr(
+        servidor,
+        "configuracion",
+        lambda: {**original(), "clave_admin": "clave-de-prueba"},
+    )
+
+    correcta = cliente.post("/api/auth/administrativo", json={"clave": "clave-de-prueba"})
+    assert correcta.status_code == 200
+    assert correcta.json()["usuario"]["rol"] == "administrativo"
+    assert correcta.json()["expiraEn"] > time.time()
+
+    incorrecta = cliente.post("/api/auth/administrativo", json={"clave": "otra"})
+    assert incorrecta.status_code == 401
+    assert "no es correcta" in incorrecta.json()["mensaje"]
+
+
+def test_limite_de_intentos_en_el_acceso_administrativo(
+    cliente: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = servidor.configuracion
+    monkeypatch.setattr(
+        servidor,
+        "configuracion",
+        lambda: {**original(), "clave_admin": "clave-de-prueba"},
+    )
+
+    for _ in range(servidor.MAX_INTENTOS_ACCESO):
+        assert cliente.post("/api/auth/administrativo", json={"clave": "mala"}).status_code == 401
+
+    bloqueada = cliente.post("/api/auth/administrativo", json={"clave": "clave-de-prueba"})
+    assert bloqueada.status_code == 429
+    assert "Demasiados intentos" in bloqueada.json()["mensaje"]
 
 
 # ---------------------------------------------------------------------------
