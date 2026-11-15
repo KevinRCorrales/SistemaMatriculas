@@ -7,7 +7,13 @@ export const MODULOS = [
     clave: "inicio",
     etiqueta: "Panel institucional",
     icono: "panel",
-    descripcion: "Indicadores y accesos rápidos",
+    descripcion: "Indicadores y accesos rápidos"
+  },
+  {
+    clave: "ranking",
+    etiqueta: "Puestos por carrera",
+    icono: "promedio",
+    descripcion: "Ranking académico del periodo actual",
     soloAdmin: true
   },
   {
@@ -136,10 +142,10 @@ export default function Layout({ ruta, modulos = MODULOS, usuario, esAdmin, onSa
           </ul>
 
           <div className="navegacion__pie">
-            <p>Datos en vivo desde MariaDB.</p>
+            <p>Información académica del periodo.</p>
             <span className="navegacion__estado">
               <span className={`punto ${error ? "punto--error" : "punto--ok"}`} aria-hidden="true" />
-              {error ? "Sin conexión" : "API conectada"}
+              {error ? "Sin conexión" : "Conexión disponible"}
             </span>
           </div>
         </nav>

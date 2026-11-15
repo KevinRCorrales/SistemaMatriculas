@@ -1,5 +1,8 @@
 # Sistema de Matrículas · Universidad Cooperativa de Colombia
 
+**Autores:** Kevin Ramírez (`kevin.ramirezcorr@campusucc.edu.co`) y Mauro Jaramillo
+(`mauro.jaramillo@campusucc.edu.co`).
+
 Portal web en **React** (Vite) con API REST propia sobre el esquema `universidad.sql`. El backend
 vive en un solo archivo (`servidor.py`), sirve el portal compilado de `web/dist` y reutiliza las
 reglas de negocio de `sistema.py`, que se conserva intacto como aplicación de escritorio.
@@ -63,22 +66,29 @@ No se requieren migraciones: la API no crea ni modifica tablas.
 | `FRONTEND_ORIGIN`   | No          | Origen extra permitido por CORS (el portal servido usa mismo origen).     |
 | `ADMIN_PASSWORD`    | Sí         | Contraseña única con la que entran los administrativos.                 |
 | `SESSION_SECRET`    | Recomendado | Secreto para firmar los tokens; si falta se deriva de `ADMIN_PASSWORD`. |
+| `PORTAL_AUTO_BUILD` | No          | `1` (por defecto) recompila el portal si está desactualizado; `0` lo desactiva. |
 
 También se aceptan los nombres históricos de `sistema.py` (`USER`, `PASSWORD`, `DATABASE`,
 `HOST`, `PORT`). El archivo `.env` está ignorado por git; `.env.example` no contiene credenciales.
 
 ## Ejecución
 
-Compila el portal una vez (y cada vez que cambies el frontend):
+Inicia el backend directamente:
 
 ```bash
-cd web
-npm run build                     # genera web/dist
-cd ..
 hatch run fastapi run -e servidor:app --port 3000
 ```
 
-o, con recarga automática del backend:
+Al arrancar, el servidor revisa si `web/dist` falta o si alguna fuente de `web/` es más nueva y
+compila el portal automáticamente (requiere `npm`). Así, los cambios del frontend se sirven sin
+necesidad de acordarse de ejecutar `npm run build`. Para compilarlo manualmente en cualquier momento:
+
+```bash
+cd web && npm run build
+```
+
+Si no quieres que el servidor compile solo, define `PORTAL_AUTO_BUILD=0` en `.env` o en el entorno
+y ejecuta `npm run build` antes de iniciar. También puedes usar recarga automática del backend:
 
 ```bash
 hatch run python -m uvicorn servidor:app --host 127.0.0.1 --port 3000 --reload
@@ -86,11 +96,20 @@ hatch run python -m uvicorn servidor:app --host 127.0.0.1 --port 3000 --reload
 
 Abre el portal en **http://127.0.0.1:3000/** (no abras `web/index.html` con `file://`: el origen
 `null` queda fuera de CORS). El backend sirve `web/dist` en `/` y la API en `/api`, así que frontend
-y backend comparten origen. Si `web/dist` no existe, el backend arranca igual pero advierte en el
-log que falta compilar el portal.
+y backend comparten origen. El HTML se envía sin caché para que una recarga normal tome la última
+compilación; si venías de una versión anterior, haz una recarga forzada una sola vez (`Ctrl+F5`).
 
 Para trabajar en el frontend con recarga en caliente, deja el backend en el puerto 3000 y ejecuta en
 `web/` `npm run dev`: Vite abre `http://127.0.0.1:5173/` y hace proxy de `/api` al backend.
+
+## Aplicación de escritorio
+
+En `escritorio/` vive una app **Electron** que carga este mismo portal en una ventana nativa para
+Windows, GNU/Linux y macOS. No duplica la API ni la base de datos: sigue apuntando a
+`http://192.168.101.82:3000` (configurable) y mantiene el login y los permisos del portal. La guía
+independiente de uso, compilación, iconos y distribución está en
+[`escritorio/README.md`](escritorio/README.md). La app de escritorio se distribuye bajo
+**AGPL-3.0-or-later**; su texto legal está en [`escritorio/LICENSE`](escritorio/LICENSE).
 
 ## Endpoints
 
@@ -209,6 +228,7 @@ web/src/vistas/        Login, Dashboard y módulos (facultades, carreras, estudi
 web/src/componentes/   Componentes reutilizables (UI y layout) y animaciones compartidas
 web/src/sesion.jsx     Contexto de sesión: token, perfil, expiración y cierre de sesión
 web/legacy/            CSS/JS de la versión anterior del portal (referencia, no se sirve)
+escritorio/            App Electron multiplataforma del portal (ver su README)
 requirements.txt       Dependencias de ejecución
 requirements-dev.txt   Dependencias de desarrollo y pruebas
 pytest.ini             Configuración de pytest
@@ -219,8 +239,11 @@ ruff.toml              Configuración del linter
 ## Problemas frecuentes
 
 - **`file://` no funciona**: abre siempre `http://127.0.0.1:3000/`.
-- **La raíz responde 404 o muestra el portal sin estilos**: falta compilar el frontend. Ejecuta
-  `cd web && npm install && npm run build` y reinicia el backend.
+- **La raíz responde 404 o muestra una versión anterior del portal**: revisa el log del servidor.
+  Al iniciar se compila automáticamente si hay fuentes nuevas; si `npm` no está disponible o
+  `PORTAL_AUTO_BUILD=0`, ejecuta `cd web && npm install && npm run build` y reinicia el backend.
+  El HTML se sirve con `Cache-Control: no-store`; si el navegador conserva una pestaña abierta de
+  antes, haz una recarga forzada una sola vez.
 - **`npm run build` falla por la versión de Node**: Vite 7 exige Node 20.19+ o 22.12+.
 - **`/api/salud` muestra `no_conectado`**: revisa que MariaDB esté corriendo y que las credenciales
   de `.env` sean correctas (el detalle aparece en la respuesta).

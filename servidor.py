@@ -15,10 +15,12 @@ import logging
 import os
 import re
 import secrets
+import shutil
+import subprocess
 import time
 import unicodedata
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -36,6 +38,15 @@ from pydantic import BaseModel, Field
 RAIZ = Path(__file__).resolve().parent
 CARPETA_WEB = RAIZ / "web"
 CARPETA_DIST = CARPETA_WEB / "dist"
+ARCHIVO_INDEX_PORTAL = CARPETA_DIST / "index.html"
+FUENTES_PORTAL = (
+    CARPETA_WEB / "index.html",
+    CARPETA_WEB / "package.json",
+    CARPETA_WEB / "package-lock.json",
+    CARPETA_WEB / "vite.config.js",
+    CARPETA_WEB / "public",
+    CARPETA_WEB / "src",
+)
 VALOR_CREDITO = 70_000
 MAX_CREDITOS_MATRICULA = 16
 NOTA_APROBACION = 3.0
@@ -223,6 +234,7 @@ def exigir_acceso_propio(sesion: dict[str, Any], identificacion: str) -> None:
 
 
 SesionAdmin = Annotated[dict[str, Any], Depends(requiere_rol("administrativo"))]
+SesionEstudiante = Annotated[dict[str, Any], Depends(requiere_rol("estudiante"))]
 SesionUsuario = Annotated[dict[str, Any], Depends(requiere_rol("estudiante", "administrativo"))]
 
 
@@ -249,7 +261,7 @@ def abrir_conexion() -> mariadb.Connection:
     cfg = configuracion()
     if not cfg["usuario"] or not cfg["clave"]:
         raise ErrorNegocio(
-            "Faltan las credenciales de MariaDB. Define DATABASE_USER y DATABASE_PASSWORD en el archivo .env.",
+            "El servicio no está disponible en este momento. Contacta al administrador del portal.",
             estado=503,
         )
     try:
@@ -262,8 +274,9 @@ def abrir_conexion() -> mariadb.Connection:
             autocommit=False,
         )
     except mariadb.Error as exc:
+        registro.warning("No se pudo conectar con MariaDB: %s", exc)
         raise ErrorNegocio(
-            f"No fue posible conectar con MariaDB ({cfg['host']}:{cfg['puerto']}/{cfg['base']}): {exc}",
+            "No pudimos conectar con el servicio de datos. Inténtalo de nuevo en unos minutos.",
             estado=503,
         ) from exc
 
@@ -428,7 +441,7 @@ def validar_notas(nota1: float, nota2: float, nota3: float) -> tuple[float, floa
             raise ErrorNegocio("Las notas deben estar entre 0.0 y 5.0.", f"nota{indice}")
         if nota <= 0.0:
             raise ErrorNegocio(
-                "Cada nota debe ser mayor que 0.0: el esquema universidad.sql define CHECK (NOTA_x > 0.0).",
+                "Cada nota debe ser mayor que 0.0.",
                 f"nota{indice}",
             )
     if notas == (0.0, 0.0, 0.0):
@@ -1214,6 +1227,157 @@ def _porcentaje(parte: float, total: float) -> float:
     return round((float(parte) / float(total)) * 100, 1)
 
 
+def _promedios_por_carrera(periodo: str) -> list[dict[str, Any]]:
+    """Promedio académico del periodo por estudiante con notas registradas."""
+    with lectura() as cur:
+        cur.execute(
+            """
+            SELECT E.IDENTIFICACION, E.NOMBRES, E.APELLIDOS,
+                   C.ID, C.NOMBRE, F.NOMBRE, AVG(N.PROMEDIO)
+            FROM ESTUDIANTES E
+            JOIN CARRERAS C ON C.ID = E.ID_CARRERA
+            JOIN FACULTADES F ON F.ID = C.ID_FACULTAD
+            JOIN MATRICULAS MT ON MT.IDENTIFICACION = E.IDENTIFICACION AND MT.PERIODO = ?
+            JOIN NOTAS N ON N.ID_MATRICULA = MT.ID_MATRICULA
+            GROUP BY E.IDENTIFICACION, E.NOMBRES, E.APELLIDOS, C.ID, C.NOMBRE, F.NOMBRE
+            """,
+            (periodo,),
+        )
+        filas = cur.fetchall()
+
+    return [
+        {
+            "identificacion": str(fila[0]).strip(),
+            "nombres": str(fila[1]).strip(),
+            "apellidos": str(fila[2]).strip(),
+            "idCarrera": int(fila[3]),
+            "carrera": str(fila[4]).strip(),
+            "facultad": str(fila[5]).strip(),
+            "promedio": round(float(fila[6] or 0), 2),
+        }
+        for fila in filas
+    ]
+
+
+def _agrupar_por_carrera(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Agrupa los promedios por carrera y asigna puestos con empates."""
+    grupos: dict[int, dict[str, Any]] = {}
+    for fila in filas:
+        grupo = grupos.setdefault(
+            fila["idCarrera"],
+            {
+                "id": fila["idCarrera"],
+                "carrera": fila["carrera"],
+                "facultad": fila["facultad"],
+                "total": 0,
+                "estudiantes": [],
+            },
+        )
+        grupo["estudiantes"].append(fila)
+
+    carreras = sorted(grupos.values(), key=lambda grupo: grupo["carrera"].upper())
+    for carrera in carreras:
+        estudiantes = sorted(
+            carrera["estudiantes"],
+            key=lambda item: (-item["promedio"], item["apellidos"].upper(), item["nombres"].upper()),
+        )
+        anterior: float | None = None
+        posicion = 0
+        for indice, estudiante in enumerate(estudiantes, start=1):
+            if anterior is None or estudiante["promedio"] < anterior:
+                posicion = indice
+                anterior = estudiante["promedio"]
+            estudiante["posicion"] = posicion
+        carrera["estudiantes"] = estudiantes
+        carrera["total"] = len(estudiantes)
+    return carreras
+
+
+def ranking_por_carrera(periodo: str | None = None) -> dict[str, Any]:
+    """Ranking completo del periodo actual para el panel administrativo."""
+    periodo_limpio = validar_periodo(periodo) if periodo else periodo_actual()
+    carreras = _agrupar_por_carrera(_promedios_por_carrera(periodo_limpio))
+    return {
+        "periodo": periodo_limpio,
+        "totalEstudiantes": sum(carrera["total"] for carrera in carreras),
+        "carreras": carreras,
+    }
+
+
+def panel_estudiante(identificacion: str, periodo: str | None = None) -> dict[str, Any]:
+    """Indicadores privados del estudiante: solo su información y su puesto."""
+    estudiante = obtener_estudiante(identificacion)
+    if not estudiante:
+        raise ErrorNegocio("El estudiante seleccionado no existe.", "identificacion", estado=404)
+
+    periodo_limpio = validar_periodo(periodo) if periodo else periodo_actual()
+    matriculas = listar_matriculas(identificacion, periodo_limpio)
+    con_nota = [matricula for matricula in matriculas if matricula.get("nota")]
+
+    notas: list[dict[str, Any]] = []
+    for matricula in con_nota:
+        for numero in (1, 2, 3):
+            notas.append(
+                {
+                    "valor": float(matricula["nota"][f"nota{numero}"]),
+                    "evaluacion": f"Nota {numero}",
+                    "codMateria": matricula["codMateria"],
+                    "nombreMateria": matricula["nombreMateria"],
+                    "creditos": matricula["creditos"],
+                }
+            )
+
+    creditos = sum(int(matricula["creditos"] or 0) for matricula in matriculas)
+    promedio = (
+        round(sum(float(matricula["nota"]["promedio"]) for matricula in con_nota) / len(con_nota), 2)
+        if con_nota
+        else None
+    )
+    aprobadas = sum(1 for matricula in con_nota if float(matricula["nota"]["promedio"]) >= NOTA_APROBACION)
+
+    mejor_nota = max(notas, key=lambda item: (item["valor"], -item["creditos"]), default=None)
+    peor_nota = min(notas, key=lambda item: (item["valor"], item["creditos"]), default=None)
+
+    puesto = None
+    if con_nota:
+        for carrera in _agrupar_por_carrera(_promedios_por_carrera(periodo_limpio)):
+            for item in carrera["estudiantes"]:
+                if item["identificacion"] == identificacion:
+                    puesto = {
+                        "posicion": item["posicion"],
+                        "total": carrera["total"],
+                        "promedio": item["promedio"],
+                        "carrera": carrera["carrera"],
+                        "facultad": carrera["facultad"],
+                    }
+                    break
+            if puesto:
+                break
+
+    return {
+        "periodo": periodo_limpio,
+        "estudiante": {
+            "identificacion": estudiante["identificacion"],
+            "nombres": estudiante["nombres"],
+            "apellidos": estudiante["apellidos"],
+            "carrera": estudiante["carrera"],
+            "facultad": estudiante["facultad"],
+        },
+        "kpis": {
+            "promedio": promedio,
+            "creditos": creditos,
+            "materias": len(matriculas),
+            "materiasConNota": len(con_nota),
+            "aprobadas": aprobadas,
+            "notaAprobacion": NOTA_APROBACION,
+        },
+        "mejorNota": mejor_nota,
+        "peorNota": peor_nota,
+        "puesto": puesto,
+        "materias": matriculas,
+    }
+
+
 def resumen_institucional(periodo: str | None = None) -> dict[str, Any]:
     """Indicadores agregados para el dashboard del portal."""
     periodo_limpio = validar_periodo(periodo) if periodo else periodo_actual()
@@ -1442,14 +1606,94 @@ def _manejador_bd(exc: mariadb.Error) -> JSONResponse:
     codigo = getattr(exc, "errno", None)
     mensajes = {
         1062: "Ya existe un registro con ese valor único (nombre, documento, correo, teléfono o código).",
-        1406: "Un valor excede la longitud permitida por el esquema de la base de datos.",
-        1452: "La referencia indicada no existe en la base de datos.",
-        3819: "Un valor no cumple una restricción CHECK del esquema universidad.sql.",
-        4025: "Un valor no cumple una restricción CHECK del esquema universidad.sql.",
+        1406: "El texto ingresado es demasiado largo.",
+        1452: "La información relacionada ya no está disponible. Recarga la página e inténtalo de nuevo.",
+        3819: "Alguno de los valores no es válido. Revisa los datos e inténtalo de nuevo.",
+        4025: "Alguno de los valores no es válido. Revisa los datos e inténtalo de nuevo.",
     }
-    mensaje = mensajes.get(codigo, "La base de datos rechazó la operación.")
+    mensaje = mensajes.get(codigo, "No pudimos guardar los cambios. Revisa los datos e inténtalo de nuevo.")
     registro.warning("Error MariaDB %s: %s", codigo, exc)
-    return JSONResponse(status_code=409, content={"mensaje": mensaje, "detalle": str(exc)})
+    return JSONResponse(status_code=409, content={"mensaje": mensaje})
+
+
+def _archivos_portal() -> Iterator[Path]:
+    for fuente in FUENTES_PORTAL:
+        if fuente.is_file():
+            yield fuente
+        elif fuente.is_dir():
+            for archivo in fuente.rglob("*"):
+                if archivo.is_file() and "node_modules" not in archivo.parts:
+                    yield archivo
+
+
+def portal_requiere_compilacion() -> bool:
+    """Indica si falta el portal compilado o hay fuentes más nuevas que él."""
+    if not ARCHIVO_INDEX_PORTAL.is_file():
+        return True
+    try:
+        compilado = ARCHIVO_INDEX_PORTAL.stat().st_mtime
+        return any(archivo.stat().st_mtime > compilado + 0.5 for archivo in _archivos_portal())
+    except OSError:
+        return True
+
+
+def compilar_portal() -> bool:
+    """Compila el portal React y devuelve si la compilación terminó bien."""
+    npm = shutil.which("npm")
+    if not npm:
+        registro.error(
+            "No se encontró npm. Instala Node.js y ejecuta `npm run build` en %s.",
+            CARPETA_WEB,
+        )
+        return False
+
+    registro.info("Compilando el portal web en %s...", CARPETA_WEB)
+    try:
+        resultado = subprocess.run(
+            [npm, "run", "build"],
+            cwd=CARPETA_WEB,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        registro.error("No se pudo ejecutar la compilación del portal: %s", exc)
+        return False
+
+    if resultado.returncode != 0:
+        detalle = (resultado.stderr or resultado.stdout or "").strip()[-2000:]
+        registro.error("La compilación del portal falló: %s", detalle or "sin detalle")
+        return False
+
+    registro.info("Portal web compilado y actualizado.")
+    return True
+
+
+def asegurar_portal_actualizado() -> None:
+    """Compila el portal cuando sus fuentes son más nuevas que `web/dist`."""
+    if not portal_requiere_compilacion():
+        return
+
+    valor = os.environ.get("PORTAL_AUTO_BUILD") or _leer_env().get("portal_auto_build") or "1"
+    if valor.strip().lower() in {"0", "false", "no", "off"}:
+        registro.warning(
+            "El portal compilado está desactualizado. Compílalo con `npm run build` en %s "
+            "o quita PORTAL_AUTO_BUILD=0 y reinicia el servidor.",
+            CARPETA_WEB,
+        )
+        return
+
+    if not compilar_portal():
+        registro.warning(
+            "Se servirá la última compilación disponible; revisa el error anterior para actualizarla."
+        )
+
+
+@asynccontextmanager
+async def _ciclo_vida(_app: FastAPI) -> AsyncIterator[None]:
+    asegurar_portal_actualizado()
+    yield
 
 
 def crear_aplicacion() -> FastAPI:
@@ -1458,6 +1702,7 @@ def crear_aplicacion() -> FastAPI:
         title="Sistema de Matrículas · API",
         version="1.0.0",
         description="Backend del portal de gestión universitaria. Reutiliza el esquema universidad.sql.",
+        lifespan=_ciclo_vida,
     )
 
     origenes = {cfg["origen_frontend"], "http://localhost:3000", "http://127.0.0.1:3000"}
@@ -1468,6 +1713,20 @@ def crear_aplicacion() -> FastAPI:
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
+
+    @app.middleware("http")
+    async def cabeceras_portal(request: Request, call_next: Any) -> Any:
+        respuesta = await call_next(request)
+        ruta = request.url.path
+        if ruta.startswith("/api/"):
+            respuesta.headers["Cache-Control"] = "no-store"
+        elif ruta.startswith("/assets/"):
+            respuesta.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif ruta == "/" or ruta.endswith(".html"):
+            respuesta.headers["Cache-Control"] = "no-store, max-age=0"
+            respuesta.headers["Pragma"] = "no-cache"
+            respuesta.headers["Expires"] = "0"
+        return respuesta
 
     app.add_exception_handler(ErrorNegocio, lambda request, exc: JSONResponse(
         status_code=exc.estado, content=exc.como_dict()
@@ -1480,7 +1739,7 @@ def crear_aplicacion() -> FastAPI:
         registro.exception("Error no controlado en %s", request.url.path)
         return JSONResponse(
             status_code=500,
-            content={"mensaje": "Ocurrió un error interno en el servidor. Revisa los registros del backend."},
+            content={"mensaje": "No pudimos completar la operación. Inténtalo de nuevo en unos minutos."},
         )
 
     @app.get("/api/salud")
@@ -1492,6 +1751,10 @@ def crear_aplicacion() -> FastAPI:
             "periodo_actual": periodo_actual(),
             "valor_credito": VALOR_CREDITO,
             "base_de_datos": estado_base_de_datos(),
+            "portal": {
+                "compilado": ARCHIVO_INDEX_PORTAL.is_file(),
+                "actualizado": not portal_requiere_compilacion(),
+            },
         }
 
     # --- Acceso ----------------------------------------------------------
@@ -1529,7 +1792,7 @@ def crear_aplicacion() -> FastAPI:
         configurada = configuracion()["clave_admin"]
         if not configurada:
             raise ErrorNegocio(
-                "El acceso administrativo no está configurado. Define ADMIN_PASSWORD en el archivo .env.",
+                "El acceso administrativo no está disponible en este momento. Contacta al administrador del portal.",
                 campo="acceso",
                 estado=503,
             )
@@ -1576,6 +1839,14 @@ def crear_aplicacion() -> FastAPI:
         periodo: str | None = Query(None, max_length=7),
     ) -> dict[str, Any]:
         return resumen_institucional(periodo)
+
+    @app.get("/api/ranking")
+    def get_ranking(sesion: SesionAdmin) -> dict[str, Any]:
+        return ranking_por_carrera()
+
+    @app.get("/api/estudiante/dashboard")
+    def get_panel_estudiante(sesion: SesionEstudiante) -> dict[str, Any]:
+        return panel_estudiante(str(sesion.get("sub") or ""))
 
     # --- Facultades ------------------------------------------------------
     @app.get("/api/facultades")
@@ -1701,14 +1972,16 @@ def crear_aplicacion() -> FastAPI:
         return obtener_recibo(identificacion, periodo)
 
     # --- Portal web (React compilado) ------------------------------------
-    if CARPETA_DIST.is_dir():
-        app.mount("/", StaticFiles(directory=str(CARPETA_DIST), html=True), name="portal")
-    else:
+    if not CARPETA_DIST.is_dir():
         registro.warning(
-            "No existe %s; compila el portal con `npm install && npm run build` en %s.",
+            "No existe %s; se intentará compilar el portal al iniciar el servidor.",
             CARPETA_DIST,
-            CARPETA_WEB,
         )
+    app.mount(
+        "/",
+        StaticFiles(directory=str(CARPETA_DIST), html=True, check_dir=False),
+        name="portal",
+    )
 
     return app
 

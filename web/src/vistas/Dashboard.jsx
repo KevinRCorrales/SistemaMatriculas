@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api } from "../api";
 import { useRecurso } from "../hooks";
 import { formatoCOP, formatoNumero, porcentaje } from "../formato";
@@ -10,6 +11,7 @@ import {
   Icono,
   Kpi,
   Medidor,
+  Seleccion,
   Tarjeta,
   Vacio
 } from "../componentes/ui";
@@ -37,6 +39,13 @@ const ACCESOS = [
 
 export default function Dashboard() {
   const { datos, cargando, error, recargar } = useRecurso(api.obtenerDashboard, []);
+  const {
+    datos: ranking,
+    cargando: cargandoRanking,
+    error: errorRanking,
+    recargar: recargarRanking
+  } = useRecurso(api.obtenerRanking, []);
+  const [carreraSeleccionada, setCarreraSeleccionada] = useState("");
 
   const hoy = new Date().toLocaleDateString("es-CO", {
     weekday: "long",
@@ -66,6 +75,10 @@ export default function Dashboard() {
   const maxFacultad = Math.max(...porFacultad.map((f) => f.matriculas), 1);
   const maxHistorico = Math.max(...historicos.map((h) => h.creditos), 1);
   const sinDatos = kpis.estudiantes === 0 && kpis.matriculasPeriodo === 0;
+  const carreraRanking =
+    ranking?.carreras.find((item) => String(item.id) === carreraSeleccionada) ||
+    ranking?.carreras[0];
+  const puestosPreview = carreraRanking?.estudiantes.slice(0, 5) || [];
 
   return (
     <div className="vista vista--panel">
@@ -92,7 +105,7 @@ export default function Dashboard() {
         <Tarjeta titulo="Aún no hay datos para el periodo" className="animar-arriba">
           <Vacio titulo="Comienza registrando la estructura académica">
             Crea facultades, carreras, estudiantes y materias para que los indicadores se calculen
-            automáticamente. Los datos se leen en vivo de la base de datos.
+            automáticamente. La información se actualiza sola cuando cambian los datos.
             <div className="vacio__acciones">
               <a className="boton boton--primario" href="#/facultades">
                 Registrar facultad
@@ -261,6 +274,78 @@ export default function Dashboard() {
           </div>
         </>
       )}
+
+      <Tarjeta
+        titulo="Puestos por carrera"
+        descripcion={
+          carreraRanking
+            ? `Vista previa de los primeros puestos de ${carreraRanking.carrera} en ${periodo}.`
+            : `Promedio académico del periodo ${periodo} por carrera.`
+        }
+        acciones={
+          <a
+            className="boton boton--secundario"
+            href={`#/ranking${carreraRanking ? `?carrera=${carreraRanking.id}` : ""}`}
+          >
+            Ver todos los estudiantes <Icono nombre="flecha" />
+          </a>
+        }
+        className="animar-arriba"
+      >
+        {errorRanking ? (
+          <>
+            <Alerta tipo="error">{errorRanking.message}</Alerta>
+            <Boton variante="secundario" onClick={recargarRanking}>
+              <Icono nombre="refrescar" /> Reintentar
+            </Boton>
+          </>
+        ) : cargandoRanking && !ranking ? (
+          <Cargando texto="Consultando puestos del periodo…" />
+        ) : ranking?.carreras.length ? (
+          <>
+            <Seleccion
+              etiqueta="Carrera"
+              id="dashboard-carrera-ranking"
+              value={String(carreraRanking?.id || "")}
+              onChange={(evento) => setCarreraSeleccionada(evento.target.value)}
+              ayuda="Elige una carrera para ver su vista previa. El panel completo está en Puestos por carrera."
+            >
+              {ranking.carreras.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.carrera} · {item.facultad}
+                </option>
+              ))}
+            </Seleccion>
+
+            {puestosPreview.length ? (
+              <ol className="lista-mejores">
+                {puestosPreview.map((estudiante) => (
+                  <li key={estudiante.identificacion}>
+                    <span className="lista-mejores__puesto">#{estudiante.posicion}</span>
+                    <span className="lista-mejores__persona">
+                      <strong>{estudiante.nombres} {estudiante.apellidos}</strong>
+                      <small>{carreraRanking.carrera}</small>
+                    </span>
+                    <span className="lista-mejores__promedio">{estudiante.promedio.toFixed(2)}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <Vacio titulo="Sin estudiantes clasificados">
+                Esta carrera aún no tiene notas registradas en {periodo}.
+              </Vacio>
+            )}
+            <p className="texto-tenue">
+              Vista previa de los 5 primeros puestos. Para ver todos los estudiantes de esta carrera,
+              abre el panel «Puestos por carrera».
+            </p>
+          </>
+        ) : (
+          <Vacio titulo="Aún no hay promedios para mostrar">
+            Cuando se registren notas en el periodo, aquí aparecerá la vista previa de los puestos.
+          </Vacio>
+        )}
+      </Tarjeta>
 
       <div className="rejilla rejilla--accesos">
         {ACCESOS.map((acceso, indice) => (

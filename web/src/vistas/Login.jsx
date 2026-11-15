@@ -83,7 +83,7 @@ export default function Login() {
   }
 
   return (
-    <div className="acceso">
+    <div className="ingreso">
       <section className="acceso__presentacion">
         <div className="acceso__marca">
           <img src="/assets/image.png" alt="Universidad Cooperativa de Colombia" width="64" height="64" />

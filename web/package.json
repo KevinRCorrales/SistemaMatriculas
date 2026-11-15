@@ -2,6 +2,19 @@
   "name": "portal-gestion-universitaria",
   "private": true,
   "version": "1.0.0",
+  "description": "Portal web de gestión universitaria de la Universidad Cooperativa de Colombia.",
+  "author": "Kevin Ramírez <kevin.ramirezcorr@campusucc.edu.co> y Mauro Jaramillo <mauro.jaramillo@campusucc.edu.co>",
+  "contributors": [
+    {
+      "name": "Kevin Ramírez",
+      "email": "kevin.ramirezcorr@campusucc.edu.co"
+    },
+    {
+      "name": "Mauro Jaramillo",
+      "email": "mauro.jaramillo@campusucc.edu.co"
+    }
+  ],
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite",

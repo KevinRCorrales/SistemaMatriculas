@@ -3,6 +3,8 @@ import Layout, { MODULOS } from "./componentes/Layout";
 import { ProveedorDatos } from "./contexto";
 import { ProveedorSesion, useSesion } from "./sesion";
 import Dashboard from "./vistas/Dashboard";
+import DashboardEstudiante from "./vistas/DashboardEstudiante";
+import Ranking from "./vistas/Ranking";
 import Facultades from "./vistas/Facultades";
 import Carreras from "./vistas/Carreras";
 import Estudiantes from "./vistas/Estudiantes";
@@ -14,6 +16,7 @@ import Login from "./vistas/Login";
 
 const VISTAS = {
   inicio: Dashboard,
+  ranking: Ranking,
   facultades: Facultades,
   carreras: Carreras,
   estudiantes: Estudiantes,
@@ -48,15 +51,23 @@ function Portal() {
     );
   }
 
-  const modulos = MODULOS.filter((modulo) => esAdmin || !modulo.soloAdmin).map((modulo) =>
-    modulo.clave === "matricula"
-      ? {
-          ...modulo,
-          etiqueta: esAdmin ? "Matrículas" : "Mi matrícula",
-          descripcion: esAdmin ? "Consulta por estudiante" : "Inscripción de materias"
-        }
-      : modulo
-  );
+  const modulos = MODULOS.filter((modulo) => esAdmin || !modulo.soloAdmin).map((modulo) => {
+    if (modulo.clave === "inicio") {
+      return {
+        ...modulo,
+        etiqueta: esAdmin ? "Panel institucional" : "Mi panel",
+        descripcion: esAdmin ? "Indicadores y accesos rápidos" : "Tus indicadores académicos"
+      };
+    }
+    if (modulo.clave === "matricula") {
+      return {
+        ...modulo,
+        etiqueta: esAdmin ? "Matrículas" : "Mi matrícula",
+        descripcion: esAdmin ? "Consulta por estudiante" : "Inscripción de materias"
+      };
+    }
+    return modulo;
+  });
   const permitidas = modulos.map((modulo) => modulo.clave);
   const predeterminada = permitidas.includes("inicio") ? "inicio" : permitidas[0];
 
@@ -107,7 +118,10 @@ function PortalAutenticado({ modulos, permitidas, predeterminada }) {
     return () => window.removeEventListener("beforeunload", aviso);
   }, [sesion]);
 
-  const Vista = VISTAS[ruta] || VISTAS[predeterminada];
+  const Vista =
+    !esAdmin && ruta === "inicio"
+      ? DashboardEstudiante
+      : VISTAS[ruta] || VISTAS[predeterminada];
 
   return (
     <Layout

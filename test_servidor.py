@@ -14,6 +14,8 @@ porque necesitan una instancia local con el esquema `universidad.sql`.
 
 from __future__ import annotations
 
+import os
+import re
 import time
 from datetime import date
 
@@ -89,9 +91,48 @@ def test_portal_web_se_sirve_desde_la_raiz(cliente: TestClient) -> None:
     assert "/assets/index-" in respuesta.text
 
 
-def test_api_expone_el_dashboard() -> None:
+def test_portal_html_no_se_guarda_en_cache(cliente: TestClient) -> None:
+    respuesta = cliente.get("/")
+    assert respuesta.headers["cache-control"] == "no-store, max-age=0"
+    assert respuesta.headers["pragma"] == "no-cache"
+
+    coincidencia = re.search(r'(/assets/index-[^"\']+\.js)', respuesta.text)
+    assert coincidencia
+    asset = cliente.get(coincidencia.group(1))
+    assert asset.status_code == 200
+    assert "immutable" in asset.headers["cache-control"]
+
+
+def test_api_no_se_guarda_en_cache(cliente: TestClient) -> None:
+    assert cliente.get("/api/salud").headers["cache-control"] == "no-store"
+
+
+def test_portal_requiere_compilacion_detecta_fuentes_nuevas(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    index = dist / "index.html"
+    index.write_text("<div id='root'></div>", encoding="utf-8")
+    fuente = tmp_path / "src" / "App.jsx"
+    fuente.parent.mkdir()
+    fuente.write_text("export default function App() {}", encoding="utf-8")
+
+    os.utime(index, (1_000, 1_000))
+    os.utime(fuente, (2_000, 2_000))
+    monkeypatch.setattr(servidor, "ARCHIVO_INDEX_PORTAL", index)
+    monkeypatch.setattr(servidor, "FUENTES_PORTAL", (fuente,))
+    assert servidor.portal_requiere_compilacion() is True
+
+    os.utime(fuente, (1_000, 1_000))
+    assert servidor.portal_requiere_compilacion() is False
+
+
+def test_api_expone_los_paneles_y_el_ranking() -> None:
     rutas = {getattr(ruta, "path", "") for ruta in servidor.app.routes}
     assert "/api/dashboard" in rutas
+    assert "/api/ranking" in rutas
+    assert "/api/estudiante/dashboard" in rutas
 
 
 def test_cors_permite_el_origen_local(cliente: TestClient) -> None:
@@ -137,13 +178,14 @@ def test_validar_correo() -> None:
         assert error.value.campo == "correo"
 
 
-def test_validar_notas_respeta_el_check_del_esquema() -> None:
+def test_validar_notas_rechaza_cero_con_un_mensaje_claro() -> None:
     assert servidor.validar_notas(4.0, 3.5, 4.25) == (4.0, 3.5, 4.25, 3.92)
 
     with pytest.raises(servidor.ErrorNegocio) as error:
         servidor.validar_notas(0.0, 3.5, 4.0)
     assert error.value.campo == "nota1"
-    assert "CHECK" in error.value.mensaje
+    assert "mayor que 0.0" in error.value.mensaje
+    assert "CHECK" not in error.value.mensaje
 
     with pytest.raises(servidor.ErrorNegocio):
         servidor.validar_notas(5.5, 3.0, 4.0)
@@ -272,6 +314,54 @@ def test_porcentaje_seguro() -> None:
     assert servidor._porcentaje(2, 3) == 66.7
 
 
+def test_ranking_comparte_puesto_en_empates_y_solo_usa_el_promedio() -> None:
+    carreras = servidor._agrupar_por_carrera(
+        [
+            {
+                "identificacion": "1",
+                "nombres": "Ana",
+                "apellidos": "A",
+                "idCarrera": 10,
+                "carrera": "Derecho",
+                "facultad": "Derecho",
+                "promedio": 4.5,
+            },
+            {
+                "identificacion": "2",
+                "nombres": "Luis",
+                "apellidos": "B",
+                "idCarrera": 10,
+                "carrera": "Derecho",
+                "facultad": "Derecho",
+                "promedio": 4.5,
+            },
+            {
+                "identificacion": "3",
+                "nombres": "Eva",
+                "apellidos": "C",
+                "idCarrera": 10,
+                "carrera": "Derecho",
+                "facultad": "Derecho",
+                "promedio": 3.8,
+            },
+        ]
+    )
+
+    estudiantes = carreras[0]["estudiantes"]
+    assert [item["posicion"] for item in estudiantes] == [1, 1, 3]
+    assert carreras[0]["total"] == 3
+    assert set(estudiantes[0]) == {
+        "identificacion",
+        "nombres",
+        "apellidos",
+        "idCarrera",
+        "carrera",
+        "facultad",
+        "promedio",
+        "posicion",
+    }
+
+
 def test_franjas_horario_interpreta_12h_y_24h() -> None:
     assert servidor.franjas_horario("MARTES 1:00PM-4:00PM") == [("MARTES", 13 * 60, 16 * 60)]
     assert servidor.franjas_horario("MIÉRCOLES 2:00PM-6:00PM") == [("MIERCOLES", 14 * 60, 18 * 60)]
@@ -376,7 +466,13 @@ def test_ruta_inexistente_devuelve_404(cliente: TestClient) -> None:
 # Autenticación y autorización
 # ---------------------------------------------------------------------------
 def test_las_rutas_privadas_exigen_sesion(cliente: TestClient) -> None:
-    for ruta in ("/api/dashboard", "/api/facultades", "/api/estudiantes"):
+    for ruta in (
+        "/api/dashboard",
+        "/api/ranking",
+        "/api/estudiante/dashboard",
+        "/api/facultades",
+        "/api/estudiantes",
+    ):
         respuesta = cliente.get(ruta)
         assert respuesta.status_code == 401
         assert respuesta.json()["campo"] == "sesion"
@@ -385,10 +481,24 @@ def test_las_rutas_privadas_exigen_sesion(cliente: TestClient) -> None:
 def test_el_estudiante_no_entra_al_panel_ni_a_los_catalogos(
     cliente: TestClient, cabecera_estudiante: dict[str, str]
 ) -> None:
-    for ruta in ("/api/dashboard", "/api/facultades", "/api/estudiantes", "/api/materias"):
+    for ruta in (
+        "/api/dashboard",
+        "/api/ranking",
+        "/api/facultades",
+        "/api/estudiantes",
+        "/api/materias",
+    ):
         respuesta = cliente.get(ruta, headers=cabecera_estudiante)
         assert respuesta.status_code == 403
         assert respuesta.json()["campo"] == "sesion"
+
+
+def test_el_administrativo_no_entra_al_panel_privado_del_estudiante(
+    cliente: TestClient, cabecera_admin: dict[str, str]
+) -> None:
+    respuesta = cliente.get("/api/estudiante/dashboard", headers=cabecera_admin)
+    assert respuesta.status_code == 403
+    assert respuesta.json()["campo"] == "sesion"
 
 
 def test_el_estudiante_solo_consulta_su_propia_informacion(
@@ -564,4 +674,5 @@ def test_conexion_sin_credenciales_es_un_error_claro(monkeypatch: pytest.MonkeyP
         servidor.abrir_conexion()
 
     assert error.value.estado == 503
-    assert ".env" in error.value.mensaje
+    assert "no está disponible" in error.value.mensaje
+    assert ".env" not in error.value.mensaje

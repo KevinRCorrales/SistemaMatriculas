@@ -27,6 +27,10 @@ export default function Recibos() {
   const [buscando, setBuscando] = useState(false);
   const [error, setError] = useState(null);
   const [mensajeVacio, setMensajeVacio] = useState("");
+  const [guardandoPdf, setGuardandoPdf] = useState(false);
+  const [avisoPdf, setAvisoPdf] = useState("");
+  const [errorPdf, setErrorPdf] = useState(null);
+  const enEscritorio = Boolean(window.portalEscritorio?.guardarPdf);
 
   useEffect(() => {
     if (!esAdmin && propio?.identificacion) {
@@ -66,6 +70,8 @@ export default function Recibos() {
 
     setBuscando(true);
     setError(null);
+    setAvisoPdf("");
+    setErrorPdf(null);
     setMensajeVacio("");
     try {
       const resultado = await api.obtenerRecibo({ identificacion, periodo });
@@ -80,6 +86,33 @@ export default function Recibos() {
     }
   }
 
+  async function guardarPdf() {
+    if (!recibo || guardandoPdf) return;
+    setAvisoPdf("");
+    setErrorPdf(null);
+
+    if (!enEscritorio) {
+      window.print();
+      return;
+    }
+
+    setGuardandoPdf(true);
+    try {
+      const resultado = await window.portalEscritorio.guardarPdf(
+        `Recibo-${recibo.numero}-${recibo.estudiante.identificacion}.pdf`
+      );
+      if (resultado?.guardado) {
+        setAvisoPdf(`Guardamos el PDF en ${resultado.ruta}`);
+      } else if (resultado?.error) {
+        setErrorPdf(new Error(resultado.error));
+      }
+    } catch {
+      setErrorPdf(new Error("No pudimos guardar el PDF. Inténtalo de nuevo."));
+    } finally {
+      setGuardandoPdf(false);
+    }
+  }
+
   return (
     <div className="vista">
       <header className="vista__encabezado animar-arriba">
@@ -87,7 +120,10 @@ export default function Recibos() {
         <h2>{esAdmin ? "Recibo de matrícula" : "Mis recibos"}</h2>
         <p>
           {esAdmin ? "Consulta" : "Genera"} el comprobante con el detalle de materias, créditos y
-          valor a pagar. Puedes imprimirlo o guardarlo como PDF desde el diálogo de impresión.
+          valor a pagar.{" "}
+          {enEscritorio
+            ? "Guárdalo como PDF y elige la carpeta donde quieres conservarlo."
+            : "Puedes imprimirlo o guardarlo como PDF desde el diálogo de impresión."}
         </p>
       </header>
 
@@ -143,6 +179,8 @@ export default function Recibos() {
 
         <div className="columna-recibo">
           {error && <Alerta tipo="error">{error.message}</Alerta>}
+          {errorPdf && <Alerta tipo="error">{errorPdf.message}</Alerta>}
+          {avisoPdf && <Alerta tipo="exito">{avisoPdf}</Alerta>}
           {cargando && <Cargando texto="Buscando periodos del estudiante…" />}
           {mensajeVacio && !recibo && <Alerta tipo="info">{mensajeVacio}</Alerta>}
 
@@ -223,8 +261,9 @@ export default function Recibos() {
                 </p>
               </div>
 
-              <Boton variante="secundario" onClick={() => window.print()}>
-                <Icono nombre="impresora" /> Imprimir o guardar PDF
+              <Boton variante="secundario" onClick={guardarPdf} cargando={guardandoPdf}>
+                <Icono nombre="impresora" />
+                {enEscritorio ? "Guardar PDF" : "Imprimir o guardar PDF"}
               </Boton>
             </>
           ) : (

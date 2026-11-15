@@ -1,0 +1,102 @@
+{
+  "name": "portal-ucc-escritorio",
+  "productName": "Portal UCC",
+  "version": "1.0.0",
+  "description": "Aplicación de escritorio del portal de matrículas de la Universidad Cooperativa de Colombia.",
+  "main": "main.js",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "author": {
+    "name": "Kevin Ramírez y Mauro Jaramillo",
+    "email": "kevin.ramirezcorr@campusucc.edu.co"
+  },
+  "contributors": [
+    {
+      "name": "Kevin Ramírez",
+      "email": "kevin.ramirezcorr@campusucc.edu.co"
+    },
+    {
+      "name": "Mauro Jaramillo",
+      "email": "mauro.jaramillo@campusucc.edu.co"
+    }
+  ],
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "co.edu.ucc.portal.matriculas",
+    "productName": "Portal UCC",
+    "copyright": "Copyright © 2026 Kevin Ramírez y Mauro Jaramillo",
+    "asar": true,
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "sin-conexion.html",
+      "sin-conexion.js",
+      "assets/icon.png",
+      "LICENSE",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Portal-UCC-Instalador-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Portal UCC",
+      "uninstallDisplayName": "Portal UCC"
+    },
+    "portable": {
+      "artifactName": "Portal-UCC-Portable-${version}.${ext}"
+    },
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.education",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "maintainer": "Kevin Ramírez <kevin.ramirezcorr@campusucc.edu.co>",
+      "category": "Education",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "artifactName": "Portal-UCC-${version}-${arch}.${ext}"
+    }
+  }
+}

@@ -31,7 +31,9 @@ npm run build        # genera web/dist
 ```
 
 El backend sirve `web/dist` en `/`; no abras `index.html` con `file://` (CORS bloquea el origen
-`null`). Si `web/dist` no existe, `servidor.py` arranca igual y avisa en el log que falta compilar.
+`null`). Al iniciar, `servidor.py` compila automáticamente si `web/dist` falta o si alguna fuente
+es más nueva (se puede desactivar con `PORTAL_AUTO_BUILD=0`). El HTML se sirve sin caché para que
+una recarga normal muestre la última compilación.
 
 ## Estructura
 

@@ -39,7 +39,7 @@ async function peticion(ruta, opciones = {}) {
     });
   } catch {
     throw new ErrorApi(
-      "No se pudo conectar con el backend. Verifica que el servidor FastAPI esté en ejecución.",
+      "No pudimos conectar con el portal. Revisa tu conexión e inténtalo de nuevo.",
       undefined,
       0
     );
@@ -66,7 +66,7 @@ async function peticion(ruta, opciones = {}) {
   if (!respuesta.ok) {
     throw new ErrorApi(
       (cuerpo && cuerpo.mensaje) ||
-        `El servidor respondió con un error (${respuesta.status}). Inténtalo de nuevo.`,
+        "No pudimos completar la solicitud. Inténtalo de nuevo en unos momentos.",
       cuerpo && cuerpo.campo,
       respuesta.status
     );
@@ -95,6 +95,10 @@ export const api = {
   cerrarSesion: () => peticion("/auth/salir", { method: "POST" }),
   obtenerDashboard: (periodo) =>
     peticion(`/dashboard${periodo ? `?periodo=${encodeURIComponent(periodo)}` : ""}`),
+
+  obtenerPanelEstudiante: () => peticion("/estudiante/dashboard"),
+
+  obtenerRanking: () => peticion("/ranking"),
 
   listarFacultades: () => peticion("/facultades"),
   listarCarreras: () => peticion("/carreras"),

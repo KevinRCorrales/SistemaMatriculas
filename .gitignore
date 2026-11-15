@@ -14,5 +14,8 @@ sistema.spec
 .pytest_cache
 .coverage
 *.log
-web/node_modules/
+node_modules/
 web/dist/
+
+escritorio/node_modules/
+escritorio/dist/
